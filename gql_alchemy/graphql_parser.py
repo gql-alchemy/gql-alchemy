@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from typing import List
+from typing import List, Optional
 
 from gql_alchemy.utils import add_if_not_none, add_if_not_empty
 
@@ -13,21 +13,25 @@ logger.addHandler(sh)
 
 
 class Reader:
-    def __init__(self, input: str):
-        self.input = input
+    text_input: str
+    index: int
+    lineno: int
+
+    def __init__(self, text_input: str):
+        self.text_input = text_input
         self.index = 0
         self.lineno = 1
 
     def push_back(self):
         self.index -= 1
-        if self.input[self.index] == "\n":
+        if self.text_input[self.index] == "\n":
             self.lineno -= 1
 
-    def next_ch(self):
+    def next_ch(self) -> Optional[str]:
         while True:
-            if len(self.input) == self.index:
+            if len(self.text_input) == self.index:
                 return None
-            ch = self.input[self.index]
+            ch = self.text_input[self.index]
             if ch == "\n":
                 self.lineno += 1
                 self.index += 1
@@ -38,11 +42,11 @@ class Reader:
             self.index += 1
             return ch
 
-    def lookup_ch(self):
+    def lookup_ch(self) -> Optional[str]:
         while True:
-            if len(self.input) == self.index:
+            if len(self.text_input) == self.index:
                 return None
-            ch = self.input[self.index]
+            ch = self.text_input[self.index]
             if ch == "\n":
                 self.lineno += 1
                 self.index += 1
@@ -52,26 +56,26 @@ class Reader:
                 continue
             return ch
 
-    def next_re(self, regexp):
+    def next_re(self, regexp) -> Optional[str]:
 
         # eat ignoring characters
         self.lookup_ch()
 
-        m = regexp.match(self.input, self.index)
+        m = regexp.match(self.text_input, self.index)
         if m:
             self.index += len(m.group(0))
             return m.group(0)
 
-    def position_str(self):
-        start = self.input.rfind("\n", 0, self.index)
+    def position_str(self) -> str:
+        start = self.text_input.rfind("\n", 0, self.index)
         if start < 0:
             start = 0
         else:
             start += 1
-        end = self.input.find("\n", self.index)
+        end = self.text_input.find("\n", self.index)
         if end < 0:
-            end = len(self.input)
-        return "{}:  {}\u2304{}".format(self.lineno, self.input[start:self.index], self.input[self.index:end])
+            end = len(self.text_input)
+        return "{}:  {}\u2304{}".format(self.lineno, self.text_input[start:self.index], self.text_input[self.index:end])
 
 
 def log_stack(stack):
@@ -105,9 +109,10 @@ def parse(input):
 
 
 class ParsingError(RuntimeError):
-    def __init__(self, msg, line):
+    def __init__(self, msg: str, reader: Reader):
         self.msg = msg
-        self.line = line
+        self.line = reader.position_str()
+        self.lineno = reader.lineno
 
     def __str__(self):
         return ''.join([self.msg, ":\n", self.line])
@@ -170,13 +175,13 @@ class Operation:
     def consume(self, reader: Reader):
         m = reader.next_re(re.compile(self.type))
         if m is None:
-            raise ParsingError("Expected `{}` keyword".format(type), reader.position_str())
+            raise ParsingError("Expected `{}` keyword".format(type), reader)
 
         ch = reader.lookup_ch()
-        if ch not in "(@{":
+        if not (ch == "(" or ch == "@" or ch == "{"):
             name = reader.next_re(NAME_RE)
             if name is None:
-                raise ParsingError("Name expected", reader.position_str())
+                raise ParsingError("Name expected", reader)
             self.name = name
 
     def next(self, stack: List, reader: Reader):
@@ -193,16 +198,17 @@ class Operation:
             return DirectivesParser()
         if ch == "{":
             return SelectionsParser()
-        raise ParsingError("Expected '{'", reader.position_str())
+        raise ParsingError("Expected '{'", reader)
 
     def to_dict(self):
-        return {
-            "type": "mutation",
-            "name": self.name,
-            "variables": [v.to_dict() for v in self.variables],
-            "directives": [d.to_dict() for d in self.directives],
-            "selections": None if self.selections is None else [s.to_dict() for s in self.selections]
+        d = {
+            "type": self.type
         }
+        add_if_not_none(d, "name", self.name)
+        add_if_not_empty(d, "vars", self.variables)
+        add_if_not_empty(d, "dirs", self.directives)
+        add_if_not_empty(d, "sel", self.selections)
+        return d
 
 
 class VariablesParser:
@@ -244,23 +250,23 @@ class Variable:
         self.type = None
         self.default = None
 
-    def consume(self, reader):
+    def consume(self, reader: Reader):
         self.name = reader.next_re(NAME_RE)
         if self.name is None:
-            raise ParsingError("Variable name expected", reader.position_str())
+            raise ParsingError("Variable name expected", reader)
         self.type = self.consume_type(reader)
 
-    def consume_type(self, reader):
+    def consume_type(self, reader: Reader):
         ch = reader.next_ch()
         if ch != ":":
-            raise ParsingError("Expected ':'", reader.position_str())
+            raise ParsingError("Expected ':'", reader)
         ch = reader.lookup_ch()
         if ch == "[":
             reader.next_ch()
             type = self.consume_type(reader)
             ch = reader.next_ch()
             if ch != "]":
-                raise ParsingError("Expected ']'", reader.position_str())
+                raise ParsingError("Expected ']'", reader)
             ch = reader.lookup_ch()
             if ch == "!":
                 reader.next_ch()
@@ -354,11 +360,13 @@ class SelectionsParser:
     def consume(self, reader: Reader):
         ch = reader.next_ch()
         if ch != "{":
-            raise ParsingError("Expected '{'", reader.position_str())
+            raise ParsingError("Expected '{'", reader)
 
     def next(self, stack: List, reader: Reader):
         ch = reader.lookup_ch()
         if ch == "}":
+            if len(self.selections) == 0:
+                raise ParsingError("Empty selection set is not allowed", reader)
             reader.next_ch()
             parent = stack[-2]
             parent.selections = self.selections
@@ -385,14 +393,14 @@ class Field:
     def consume(self, reader: Reader):
         name = reader.next_re(NAME_RE)
         if name is None:
-            raise ParsingError("Name expected", reader.position_str())
+            raise ParsingError("Name expected", reader)
         ch = reader.lookup_ch()
         if ch == ":":
             reader.next_ch()
             self.alias = name
             self.name = reader.next_re(NAME_RE)
             if self.name is None:
-                raise ParsingError("Name expected", reader.position_str())
+                raise ParsingError("Name expected", reader)
         else:
             self.name = name
 
@@ -428,7 +436,7 @@ class ArgumentsParser:
     def consume(self, reader: Reader):
         ch = reader.next_ch()
         if ch != "(":
-            raise ParsingError("Expected '('", reader.position_str())
+            raise ParsingError("Expected '('", reader)
 
     def next(self, stack: List, reader: Reader):
         ch = reader.lookup_ch()
@@ -455,10 +463,10 @@ class Argument:
     def consume(self, reader: Reader):
         self.name = reader.next_re(NAME_RE)
         if self.name is None:
-            raise ParsingError("Name expected", reader.position_str())
+            raise ParsingError("Name expected", reader)
         ch = reader.next_ch()
         if ch != ":":
-            raise ParsingError("Expected ':'", reader.position_str())
+            raise ParsingError("Expected ':'", reader)
 
     def next(self, stack, reader: Reader):
         return ValueParser()
@@ -488,11 +496,11 @@ class ValueParser:
         ch = reader.lookup_ch()
         if ch == "$":
             if self.const:
-                raise ParsingError("Unexpected '$'", reader.position_str())
+                raise ParsingError("Unexpected '$'", reader)
             reader.next_ch()
             name = reader.next_re(NAME_RE)
             if name is None:
-                raise ParsingError("Name expected", reader.position_str())
+                raise ParsingError("Name expected", reader)
             self.reduce(stack, VariableValue(name))
         elif ch == '"':
             del stack[-1]
@@ -531,7 +539,7 @@ class ValueParser:
             if v is not None:
                 self.reduce(stack, int(v))
                 return
-            raise ParsingError("Value expected", reader.position_str())
+            raise ParsingError("Value expected", reader)
 
     def reduce(self, stack: List, value):
         arg = stack[-2]
