@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from gql_alchemy.graphql_parser import parse, ParsingError
+from gql_alchemy.graphql_parser import parse_document, ParsingError
 
 test = """
 mutation CreateReviewForEpisode($ep: Episode!, $review: ReviewInput!) {
@@ -15,19 +15,19 @@ mutation CreateReviewForEpisode($ep: Episode!, $review: ReviewInput!) {
 
 class ParsingTest(unittest.TestCase):
     def assertDocument(self, expected, query):
-        d = parse(query)
-        self.assertEqual(expected, json.dumps(d.to_dict(), sort_keys=True))
+        d = parse_document(query)
+        self.assertEqual(expected, json.dumps(d.to_primitive(), sort_keys=True))
 
     def assertParsingError(self, lineno, query):
         with self.assertRaises(ParsingError) as cm:
-            parse(query)
+            parse_document(query)
         self.assertEqual(lineno, cm.exception.lineno)
 
 
-class TestShortcut(ParsingTest):
-    def test(self):
+class TestDocument(ParsingTest):
+    def test_shortcut_form(self):
         self.assertDocument(
-            '{"selections": [{"name": "id", "type": "field"}, {"name": "name", "type": "field"}], "type": "document"}',
+            '{"selections": [{"name": "id", "type": "Field"}, {"name": "name", "type": "Field"}], "type": "Document"}',
             """
             {
                 id
@@ -37,7 +37,7 @@ class TestShortcut(ParsingTest):
         )
 
         self.assertDocument(
-            '{"selections": [{"name": "user", "selections": [{"name": "id", "type": "field"}, {"name": "name", "type": "field"}], "type": "field"}], "type": "document"}',
+            '{"selections": [{"name": "user", "selections": [{"name": "id", "type": "Field"}, {"name": "name", "type": "Field"}], "type": "Field"}], "type": "Document"}',
             """
             {
                 user {
@@ -48,11 +48,19 @@ class TestShortcut(ParsingTest):
             """
         )
 
+        self.assertParsingError(
+            3,
+            """
+            {id}
+            {id}
+            """
+        )
+
 
 class TestQuery(ParsingTest):
     def test_simple(self):
         self.assertDocument(
-            '{"operations": [{"sel": [{"name": "foo", "type": "field"}], "type": "query"}], "type": "document"}',
+            '{"operations": [{"selections": [{"name": "foo", "type": "Field"}], "type": "Query"}], "type": "Document"}',
             """
             query {
                 foo
@@ -75,5 +83,5 @@ class TestQuery(ParsingTest):
 
 class TestParse(unittest.TestCase):
     def test(self):
-        d = parse(test)
-        print(json.dumps(d.to_dict(), indent=2))
+        d = parse_document(test)
+        print(json.dumps(d.to_primitive(), indent=2))

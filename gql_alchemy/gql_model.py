@@ -1,4 +1,4 @@
-from typing import List, MutableMapping, Mapping, Union, Optional
+from typing import Sequence, MutableMapping, Union, Optional, Mapping
 
 from .utils import add_if_not_empty, add_if_not_none, PrimitiveType, PrimitiveSerializable
 
@@ -11,14 +11,14 @@ class GraphQlModelType(PrimitiveSerializable):
 
 
 class Document(GraphQlModelType):
-    operations: List['Operation']
-    fragments: List['Fragment']
-    selections: List['Selection']
+    operations: Sequence['Operation']
+    fragments: Sequence['Fragment']
+    selections: Sequence['Selection']
 
     def __init__(self,
-                 selections: List['Selection'],
-                 operations: List['Operation'],
-                 fragments: List['Fragment']):
+                 selections: Sequence['Selection'],
+                 operations: Sequence['Operation'],
+                 fragments: Sequence['Fragment']):
         self.selections = selections
         self.operations = operations
         self.fragments = fragments
@@ -33,14 +33,16 @@ class Document(GraphQlModelType):
 
 class Operation(GraphQlModelType):
     name: Optional[str]
-    variables: List['VariableDefinition']
-    directives: List['Directive']
-    selections: List['Selection']
+    variables: Sequence['VariableDefinition']
+    directives: Sequence['Directive']
+    selections: Sequence['Selection']
 
     def __init__(self,
-                 variables: List['Argument'],
-                 directives: List['Directive'],
-                 selections: List['Selection']):
+                 name,
+                 variables: Sequence['VariableDefinition'],
+                 directives: Sequence['Directive'],
+                 selections: Sequence['Selection']):
+        self.name = name
         self.variables = variables
         self.directives = directives
         self.selections = selections
@@ -65,9 +67,9 @@ class Mutation(Operation):
 class VariableDefinition(GraphQlModelType):
     name: str
     type: 'Type'
-    default: PrimitiveType
+    default: 'ConstValue'
 
-    def __init__(self, name: str, var_type: 'Type', default: PrimitiveType):
+    def __init__(self, name: str, var_type: 'Type', default: 'ConstValue'):
         self.name = name
         self.type = var_type
         self.default = default
@@ -91,25 +93,35 @@ class NamedType(Type):
         self.name = name
 
     def to_primitive(self):
-        return [self.name, self.null]
+        key = "@named"
+
+        if not self.null:
+            key += "!"
+
+        return {key: self.name}
 
 
-class ArrayType(Type):
-    item_type: Type
+class ListType(Type):
+    el_type: Type
 
-    def __init__(self, item_type: Type, null: bool):
+    def __init__(self, el_type: Type, null: bool):
         super().__init__(null)
-        self.item_type = item_type
+        self.el_type = el_type
 
     def to_primitive(self):
-        return [self.item_type.to_primitive(), self.null]
+        key = "@list"
+
+        if not self.null:
+            key += "!"
+
+        return {key: self.el_type.to_primitive()}
 
 
 class Directive(GraphQlModelType):
     name: str
-    arguments: List['Argument']
+    arguments: Sequence['Argument']
 
-    def __init__(self, name: str, arguments: List['Argument']):
+    def __init__(self, name: str, arguments: Sequence['Argument']):
         self.name = name
         self.arguments = arguments
 
@@ -120,10 +132,83 @@ class Directive(GraphQlModelType):
         return d
 
 
-Value = Union[
-    PrimitiveType, 'Variable', List[Union[PrimitiveType, 'Variable']],
-    Mapping[str, Union[PrimitiveType, 'Variable']]
-]
+ConstValue = Union[int, float, str, bool, 'NullValue', 'EnumValue', 'ConstListValue', 'ConstObjectValue']
+
+Value = Union['Variable', int, float, str, bool, 'NullValue', 'EnumValue', 'ListValue', 'ObjectValue']
+
+
+class Variable(GraphQlModelType):
+    name: str
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def to_primitive(self):
+        return {"@var": self.name}
+
+
+class NullValue(GraphQlModelType):
+    def to_primitive(self):
+        return {"@null": None}
+
+
+class EnumValue(GraphQlModelType):
+    value: str
+
+    def __init__(self, value: str):
+        self.value = value
+
+    def to_primitive(self):
+        return {"@enum": self.value}
+
+
+def to_primitive(value: Union[Value, ConstValue]) -> PrimitiveType:
+    if isinstance(value, Variable) or isinstance(value, NullValue) or isinstance(value, EnumValue) \
+            or isinstance(value, ConstListValue) or isinstance(value, ListValue) \
+            or isinstance(value, ConstObjectValue) or isinstance(value, ObjectValue):
+        return value.to_primitive()
+
+    return value
+
+
+class ConstListValue(GraphQlModelType):
+    values: Sequence[ConstValue]
+
+    def __init__(self, values: Sequence[ConstValue]):
+        self.values = values
+
+    def to_primitive(self):
+        return {"@const-list": [to_primitive(v) for v in self.values]}
+
+
+class ListValue(GraphQlModelType):
+    values: Sequence[Value]
+
+    def __init__(self, values: Sequence[Value]):
+        self.values = values
+
+    def to_primitive(self):
+        return {"@list": [to_primitive(v) for v in self.values]}
+
+
+class ConstObjectValue(GraphQlModelType):
+    values: Mapping[str, ConstValue]
+
+    def __init__(self, values: Mapping[str, ConstValue]):
+        self.values = values
+
+    def to_primitive(self):
+        return {"@const-obj": dict(((k, to_primitive(v)) for k, v in self.values.items()))}
+
+
+class ObjectValue(GraphQlModelType):
+    values: Mapping[str, Value]
+
+    def __init__(self, values: Mapping[str, Value]):
+        self.values = values
+
+    def to_primitive(self):
+        return {"@obj": dict(((k, to_primitive(v)) for k, v in self.values.items()))}
 
 
 class Argument(GraphQlModelType):
@@ -142,25 +227,14 @@ class Argument(GraphQlModelType):
         return [self.name, value]
 
 
-class Variable(GraphQlModelType):
-    name: str
-
-    def __init__(self, name: str):
-        self.name = name
-
-    def to_primitive(self):
-        return {
-            "var": self.name
-        }
-
-
 class Fragment(GraphQlModelType):
     name: str
     on_type: NamedType
-    directives: List[Directive]
-    selections: List['Selection']
+    directives: Sequence[Directive]
+    selections: Sequence['Selection']
 
-    def __init__(self, name: str, on_type: NamedType, directives: List[Directive], selections: List['Selection']):
+    def __init__(self, name: str, on_type: NamedType,
+                 directives: Sequence[Directive], selections: Sequence['Selection']):
         self.name = name
         self.on_type = on_type
         self.directives = directives
@@ -182,15 +256,15 @@ class Selection(GraphQlModelType):
 class Field(Selection):
     alias: Optional[str]
     name: str
-    arguments: List[Argument]
-    directives: List[Directive]
-    selections: List[Selection]
+    arguments: Sequence[Argument]
+    directives: Sequence[Directive]
+    selections: Sequence[Selection]
 
     def __init__(self, alias: Optional[str],
                  name: str,
-                 arguments: List[Argument],
-                 directives: List[Directive],
-                 selections: List[Selection]):
+                 arguments: Sequence[Argument],
+                 directives: Sequence[Directive],
+                 selections: Sequence[Selection]):
         self.alias = alias
         self.name = name
         self.arguments = arguments
@@ -209,9 +283,9 @@ class Field(Selection):
 
 class FragmentSpread(Selection):
     fragment_name: str
-    directives: List[Directive]
+    directives: Sequence[Directive]
 
-    def __init__(self, fragment_name: str, directives: List[Directive]):
+    def __init__(self, fragment_name: str, directives: Sequence[Directive]):
         self.fragment_name = fragment_name
         self.directives = directives
 
@@ -224,13 +298,13 @@ class FragmentSpread(Selection):
 
 class InlineFragment(Selection):
     on_type: Optional[NamedType]
-    directives: List[Directive]
-    selections: List[Selection]
+    directives: Sequence[Directive]
+    selections: Sequence[Selection]
 
     def __init__(self,
                  on_type: Optional[NamedType],
-                 directives: List[Directive],
-                 selections: List[Selection]):
+                 directives: Sequence[Directive],
+                 selections: Sequence[Selection]):
         self.on_type = on_type
         self.directives = directives
         self.selections = selections

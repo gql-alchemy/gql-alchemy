@@ -1,6 +1,6 @@
-from typing import Union, List, Mapping, MutableMapping
+from typing import Union, Sequence, Mapping, MutableMapping, Optional
 
-PrimitiveType = Union[None, bool, int, float, str, List['PrimitiveType'], Mapping[str, 'PrimitiveType']]
+PrimitiveType = Union[None, bool, int, float, str, Sequence['PrimitiveType'], Mapping[str, 'PrimitiveType']]
 
 
 class PrimitiveSerializable:
@@ -9,7 +9,7 @@ class PrimitiveSerializable:
 
 
 def add_if_not_empty(mapping: MutableMapping[str, PrimitiveType],
-                     name: str, values: Union[List[PrimitiveSerializable], None]):
+                     name: str, values: Optional[Sequence[PrimitiveSerializable]]):
     if values is not None and len(values) > 0:
         mapping[name] = [i.to_primitive() for i in values]
 
