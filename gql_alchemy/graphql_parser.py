@@ -3,6 +3,8 @@ import logging
 import re
 from typing import List
 
+from gql_alchemy.utils import add_if_not_none, add_if_not_empty
+
 logger = logging.getLogger("parser")
 logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
@@ -123,11 +125,18 @@ class ParseObject:
 
 
 class Document:
+    def __init__(self):
+        self.operations = []
+        self.selections = []
+
     def consume(self, reader: Reader):
         pass
 
     def next(self, stack: List, reader: Reader):
         ch = reader.lookup_ch()
+
+        if ch == "{":
+            return SelectionsParser()
 
         if ch == "m":
             return Operation("mutation")
@@ -135,10 +144,16 @@ class Document:
         if ch == "q":
             return Operation("query")
 
+        if ch is None:
+            return Success()
+
     def to_dict(self):
-        return {
+        d = {
             "type": "document"
         }
+        add_if_not_empty(d, "operations", self.operations)
+        add_if_not_empty(d, "selections", self.selections)
+        return d
 
 
 NAME_RE = re.compile(r'[_A-Za-z][_0-9A-Za-z]*')
@@ -150,7 +165,7 @@ class Operation:
         self.name = None
         self.variables = []
         self.directives = []
-        self.selections = []
+        self.selections = None
 
     def consume(self, reader: Reader):
         m = reader.next_re(re.compile(self.type))
@@ -165,6 +180,11 @@ class Operation:
             self.name = name
 
     def next(self, stack: List, reader: Reader):
+        if self.selections is not None:
+            d = stack[-2]
+            d.operations.append(self)
+            del stack[-1]
+            return
         ch = reader.lookup_ch()
         if ch == "(":
             reader.next_ch()
@@ -173,10 +193,15 @@ class Operation:
             return DirectivesParser()
         if ch == "{":
             return SelectionsParser()
+        raise ParsingError("Expected '{'", reader.position_str())
 
     def to_dict(self):
         return {
-            "type": "mutation"
+            "type": "mutation",
+            "name": self.name,
+            "variables": [v.to_dict() for v in self.variables],
+            "directives": [d.to_dict() for d in self.directives],
+            "selections": None if self.selections is None else [s.to_dict() for s in self.selections]
         }
 
 
@@ -260,7 +285,7 @@ class Variable:
             vp.variables.append(self)
             del stack[-1]
         else:
-            raise RuntimeError("..., VariablesParser, VariableParser] expected")
+            raise RuntimeError("..., VariablesParser, Variable] expected")
 
     def to_dict(self):
         return {
@@ -334,6 +359,7 @@ class SelectionsParser:
     def next(self, stack: List, reader: Reader):
         ch = reader.lookup_ch()
         if ch == "}":
+            reader.next_ch()
             parent = stack[-2]
             parent.selections = self.selections
             del stack[-1]
@@ -350,7 +376,224 @@ class SelectionsParser:
 
 class Field:
     def __init__(self):
+        self.alias = None
+        self.name = None
+        self.arguments = []
+        self.directives = []
+        self.selections = []
+
+    def consume(self, reader: Reader):
+        name = reader.next_re(NAME_RE)
+        if name is None:
+            raise ParsingError("Name expected", reader.position_str())
+        ch = reader.lookup_ch()
+        if ch == ":":
+            reader.next_ch()
+            self.alias = name
+            self.name = reader.next_re(NAME_RE)
+            if self.name is None:
+                raise ParsingError("Name expected", reader.position_str())
+        else:
+            self.name = name
+
+    def next(self, stack: List, reader: Reader):
+        ch = reader.lookup_ch()
+        if ch == "(":
+            return ArgumentsParser()
+        elif ch == "@":
+            return DirectivesParser()
+        elif ch == "{":
+            return SelectionsParser()
+        else:
+            sp = stack[-2]
+            sp.selections.append(self)
+            del stack[-1]
+
+    def to_dict(self):
+        d = {
+            "type": "field",
+            "name": self.name
+        }
+        add_if_not_none(d, "alias", self.alias)
+        add_if_not_empty(d, "arguments", self.arguments)
+        add_if_not_empty(d, "directives", self.directives)
+        add_if_not_empty(d, "selections", self.selections)
+        return d
+
+
+class ArgumentsParser:
+    def __init__(self):
+        self.arguments = []
+
+    def consume(self, reader: Reader):
+        ch = reader.next_ch()
+        if ch != "(":
+            raise ParsingError("Expected '('", reader.position_str())
+
+    def next(self, stack: List, reader: Reader):
+        ch = reader.lookup_ch()
+        if ch == ")":
+            reader.next_ch()
+            parent = stack[-2]
+            parent.arguments = self.arguments
+            del stack[-1]
+        else:
+            return Argument()
+
+    def to_dict(self):
+        return {
+            "type": "argumentsParser",
+            "arguments": [a.to_dict() for a in self.arguments]
+        }
+
+
+class Argument:
+    def __init__(self):
+        self.name = None
+        self.value = None
+
+    def consume(self, reader: Reader):
+        self.name = reader.next_re(NAME_RE)
+        if self.name is None:
+            raise ParsingError("Name expected", reader.position_str())
+        ch = reader.next_ch()
+        if ch != ":":
+            raise ParsingError("Expected ':'", reader.position_str())
+
+    def next(self, stack, reader: Reader):
+        return ValueParser()
+
+    @staticmethod
+    def value_to_dict(value):
+        if isinstance(value, VariableValue) or isinstance(value, EnumValue) or isinstance(value, ObjectValue):
+            return value.to_dict()
+        if isinstance(value, list):
+            return [Argument.value_to_dict(i) for i in value]
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "value": self.value_to_dict(self.value)
+        }
+
+
+class ValueParser:
+    def __init__(self, const=False):
+        self.const = const
+
+    def consume(self, reader: Reader):
+        pass
+
+    def next(self, stack: List, reader: Reader):
+        ch = reader.lookup_ch()
+        if ch == "$":
+            if self.const:
+                raise ParsingError("Unexpected '$'", reader.position_str())
+            reader.next_ch()
+            name = reader.next_re(NAME_RE)
+            if name is None:
+                raise ParsingError("Name expected", reader.position_str())
+            self.reduce(stack, VariableValue(name))
+        elif ch == '"':
+            del stack[-1]
+            return StringValueParser()
+        elif ch == "[":
+            del stack[-1]
+            return ListValueParser(self.const)
+        elif ch == "{":
+            del stack[-1]
+            return ObjectValueParser(self.const)
+        else:
+            v = reader.next_re(re.compile("true"))
+            if v is not None:
+                self.reduce(stack, True)
+                return
+            v = reader.next_re(re.compile("false"))
+            if v is not None:
+                self.reduce(stack, False)
+                return
+            v = reader.next_re(re.compile("null"))
+            if v is not None:
+                self.reduce(stack, None)
+                return
+            v = reader.next_re(NAME_RE)
+            if v is not None:
+                self.reduce(stack, EnumValue(v))
+                return
+            int_part = r'-?(?:[1-9][0-9]+|0)'
+            fr_part = r'(?:\.[0-9]+)'
+            exp_part = r'(?:[eE][+-]?[0-9]+)'
+            v = reader.next_re(re.compile(int_part + r'(?:' + fr_part + exp_part + '?|' + exp_part + ')'))
+            if v is not None:
+                self.reduce(stack, float(v))
+                return
+            v = reader.next_re(re.compile(int_part))
+            if v is not None:
+                self.reduce(stack, int(v))
+                return
+            raise ParsingError("Value expected", reader.position_str())
+
+    def reduce(self, stack: List, value):
+        arg = stack[-2]
+        arg.value = value
+        args = stack[-3]
+        args.arguments.append(arg)
+        del stack[-1]
+        del stack[-1]
+
+    def to_dict(self):
+        return {
+            "type": "valueParser",
+            "const": self.const
+        }
+
+
+class ListValueParser:
+    def __init__(self, const):
         raise NotImplementedError()
+
+
+class ObjectValueParser:
+    def __init__(self, const):
+        raise NotImplementedError()
+
+
+class ObjectValue:
+    def __init__(self, value):
+        self.value = value
+
+    def to_dict(self):
+        return {
+            "type": "objectValue",
+            "value": self.value
+        }
+
+
+class StringValueParser:
+    def __init__(self):
+        raise NotImplementedError()
+
+
+class VariableValue:
+    def __init__(self, name):
+        self.name = name
+
+    def to_dict(self):
+        return {
+            "type": "variableValue",
+            "name": self.name
+        }
+
+
+class EnumValue:
+    def __init__(self, name):
+        self.name = name
+
+    def to_dict(self):
+        return {
+            "type": "enumValue",
+            "name": self.name
+        }
 
 
 class SpreadParser:
@@ -370,3 +613,6 @@ class Success:
         return {
             "type": "success"
         }
+
+    def consume(self, reader):
+        pass
