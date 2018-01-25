@@ -7,11 +7,6 @@ from typing import List
 from .gql_model import *
 
 logger = logging.getLogger("gql_alchemy")
-logger.setLevel(logging.DEBUG)
-sh = logging.StreamHandler()
-sh.setLevel(logging.DEBUG)
-logger.addHandler(sh)
-
 
 class Reader:
     text_input: str

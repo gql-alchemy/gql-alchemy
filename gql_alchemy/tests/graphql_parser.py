@@ -3,6 +3,12 @@ import unittest
 from gql_alchemy.graphql_parser import *
 
 
+# logger.setLevel(logging.DEBUG)
+# sh = logging.StreamHandler()
+# sh.setLevel(logging.DEBUG)
+# logger.addHandler(sh)
+
+
 class ParsingTest(unittest.TestCase):
     def init_parser(self) -> ElementParser:
         raise NotImplementedError()
