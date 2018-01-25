@@ -41,28 +41,31 @@ class ParsingTest(unittest.TestCase):
 
 
 class DocumentParserTest(ParsingTest):
+    maxDiff = None
+
     def test_shortcut_form(self):
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}, {"name": "name", "type": "Field"}],'
-            ' "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}, {"@f": "name"}]}]}',
             "{ id name }"
         )
 
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "user", "selections": [{"name": "id", "type": "Field"},'
-            ' {"name": "name", "type": "Field"}], "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": ['
+            '{"@f": "user", "selections": [{"@f": "id"}, {"@f": "name"}]}]}]}',
             "{ user {id name} }"
         )
 
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}], "type": "Document"}',
+            '{"@doc": null, "operations": ['
+            '{"@q": null, "selections": [{"@f": "id"}]}, '
+            '{"@m": null, "selections": [{"@f": "id"}]}]}',
             "{id} mutation {id}"
         )
 
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": ['
+            '{"@m": null, "selections": [{"@f": "id"}]}, '
+            '{"@q": null, "selections": [{"@f": "id"}]}]}',
             "mutation {id} {id}"
         )
 
@@ -72,49 +75,46 @@ class DocumentParserTest(ParsingTest):
 
     def test_query(self):
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "query { id }"
         )
 
     def test_mutation(self):
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}], '
-            '"type": "Document"}',
+            '{"@doc": null, "operations": [{"@m": null, "selections": [{"@f": "id"}]}]}',
             "mutation { id }"
         )
 
     def test_fragment(self):
         self.assertDocument(
-            '{"fragments": [{"name": "foo", "on_type": {"@named": "Bar"}, '
-            '"selections": [{"name": "id", "type": "Field"}], "type": "Fragment"}], "type": "Document"}',
+            '{"@doc": null, '
+            '"fragments": [{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}]}',
             "fragment foo on Bar { id }"
         )
 
     def test_parse_many(self):
         self.assertDocument(
-            '{"fragments": [{"name": "foo", "on_type": {"@named": "Bar"}, '
-            '"selections": [{"name": "id", "type": "Field"}], "type": "Fragment"}, '
-            '{"name": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"name": "id", "type": "Field"}], '
-            '"type": "Fragment"}], '
-            '"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}], "type": "Document"}',
+            '{"@doc": null, "fragments": ['
+            '{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}, '
+            '{"@frg": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}], "operations": ['
+            '{"@q": null, "selections": [{"@f": "id"}]}, '
+            '{"@q": null, "selections": [{"@f": "id"}]}, '
+            '{"@q": null, "selections": [{"@f": "id"}]}, '
+            '{"@m": null, "selections": [{"@f": "id"}]}, '
+            '{"@m": null, "selections": [{"@f": "id"}]}]}',
             "query {id} query {id} query {id}"
             "mutation {id} mutation {id}"
             "fragment foo on Bar {id} fragment foo1 on Bar {id}"
         )
         self.assertDocument(
-            '{"fragments": [{"name": "foo", "on_type": {"@named": "Bar"}, '
-            '"selections": [{"name": "id", "type": "Field"}], "type": "Fragment"}, '
-            '{"name": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"name": "id", "type": "Field"}], '
-            '"type": "Fragment"}], '
-            '"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
-            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "fragments": ['
+            '{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}, '
+            '{"@frg": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}], "operations": ['
+            '{"@q": null, "selections": [{"@f": "id"}]}, '
+            '{"@m": null, "selections": [{"@f": "id"}]}, '
+            '{"@q": null, "selections": [{"@f": "id"}]}, '
+            '{"@m": null, "selections": [{"@f": "id"}]}, '
+            '{"@q": null, "selections": [{"@f": "id"}]}]}',
             "query {id} mutation {id} query {id}"
             "mutation {id} fragment foo on Bar {id}"
             "query {id} fragment foo1 on Bar {id}"
@@ -122,29 +122,29 @@ class DocumentParserTest(ParsingTest):
 
     def test_whitespaces(self):
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             ",,query,,{,,,id,},"
         )
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "query{id}"
         )
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "  query   {  id  }   "
         )
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "\n\nquery\n\n{\n\n\nid\n}\n\n\n"
         )
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "\t\tquery\t\t{\t\t\tid\t}\t\t\t"
         )
 
     def test_comments(self):
         self.assertDocument(
-            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "# comment\n  #\nquery{id} # comment\n# query {foo}\n#\n# comment"
         )
 
@@ -164,7 +164,7 @@ class QueryOperationParserTest(ParsingTest):
 
     def test_operation_type(self):
         self.assertParserResult(
-            '{"selections": [{"name": "foo", "type": "Field"}], "type": "Query"}',
+            '{"@q": null, "selections": [{"@f": "foo"}]}',
             "query {foo}"
         )
 
@@ -172,49 +172,38 @@ class QueryOperationParserTest(ParsingTest):
 
     def test_optionals(self):
         self.assertParserResult(
-            '{"selections": [{"name": "foo", "type": "Field"}], "type": "Query"}',
+            '{"@q": null, "selections": [{"@f": "foo"}]}',
             "query {foo}"
         )
         self.assertParserResult(
-            '{"directives": [{"name": "bar", "type": "Directive"}], "name": "foo", '
-            '"selections": [{"name": "abc", "type": "Field"}], "type": "Query", '
+            '{"@q": "foo", "directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}], '
             '"variables": [["id", {"@named": "Bar"}, null]]}',
             "query foo ($id: Bar) @bar {abc}"
         )
         self.assertParserResult(
-            '{"directives": [{"name": "bar", "type": "Directive"}], '
-            '"selections": [{"name": "abc", "type": "Field"}], '
-            '"type": "Query", '
+            '{"@q": null, "directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}], '
             '"variables": [["id", {"@named": "Bar"}, null]]}',
             "query ($id: Bar) @bar {abc}"
         )
         self.assertParserResult(
-            '{"directives": [{"name": "bar", "type": "Directive"}], '
-            '"name": "foo", '
-            '"selections": [{"name": "abc", "type": "Field"}], '
-            '"type": "Query"}',
+            '{"@q": "foo", "directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}]}',
             "query foo @bar {abc}"
         )
         self.assertParserResult(
-            '{"name": "foo", '
-            '"selections": [{"name": "abc", "type": "Field"}], '
-            '"type": "Query", '
-            '"variables": [["id", {"@named": "Bar"}, null]]}',
+            '{"@q": "foo", "selections": [{"@f": "abc"}], "variables": [["id", {"@named": "Bar"}, null]]}',
             "query foo ($id: Bar) {abc}"
         )
         self.assertParserResult(
-            '{"name": "foo", "selections": [{"name": "abc", "type": "Field"}], "type": "Query"}',
+            '{"@q": "foo", "selections": [{"@f": "abc"}]}',
             "query foo {abc}"
         )
         self.assertParserResult(
-            '{"selections": [{"name": "abc", "type": "Field"}], '
-            '"type": "Query", "variables": [["id", {"@named": "Bar"}, null]]}',
+            '{"@q": null, "selections": [{"@f": "abc"}], '
+            '"variables": [["id", {"@named": "Bar"}, null]]}',
             "query ($id: Bar) {abc}"
         )
         self.assertParserResult(
-            '{"directives": [{"name": "bar", "type": "Directive"}], '
-            '"selections": [{"name": "abc", "type": "Field"}], '
-            '"type": "Query"}',
+            '{"@q": null, "directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}]}',
             "query @bar {abc}"
         )
         self.assertParserError(1, "query @bar foo {abc}")
@@ -250,7 +239,7 @@ class MutationOperationParserTest(ParsingTest):
 
     def test_parse(self):
         self.assertParserResult(
-            '{"selections": [{"name": "foo", "type": "Field"}], "type": "Mutation"}',
+            '{"@m": null, "selections": [{"@f": "foo"}]}',
             "mutation {foo}"
         )
         self.assertParserError(1, "query {foo}")
@@ -339,27 +328,27 @@ class DirectivesParserTest(ParsingTest):
 
         self.assertParserResults(
             "@foo",
-            '{"name": "foo", "type": "Directive"}'
+            '{"@dir": "foo"}'
         )
 
         self.assertParserResults(
             "@foo@bar",
-            '{"name": "foo", "type": "Directive"}',
-            '{"name": "bar", "type": "Directive"}'
+            '{"@dir": "foo"}',
+            '{"@dir": "bar"}'
         )
 
         self.assertParserResults(
             "@foo @bar @abc",
-            '{"name": "foo", "type": "Directive"}',
-            '{"name": "bar", "type": "Directive"}',
-            '{"name": "abc", "type": "Directive"}'
+            '{"@dir": "foo"}',
+            '{"@dir": "bar"}',
+            '{"@dir": "abc"}'
         )
 
         self.assertParserResults(
             "@foo(id: 3) @bar @abc(foo: 2.5 abc: null)",
-            '{"arguments": [["id", {"@int": 3}]], "name": "foo", "type": "Directive"}',
-            '{"name": "bar", "type": "Directive"}',
-            '{"arguments": [["foo", {"@float": 2.5}], ["abc", {"@null": null}]], "name": "abc", "type": "Directive"}'
+            '{"@dir": "foo", "arguments": [["id", {"@int": 3}]]}',
+            '{"@dir": "bar"}',
+            '{"@dir": "abc", "arguments": [["foo", {"@float": 2.5}], ["abc", {"@null": null}]]}'
         )
 
     def test_fails(self):
@@ -406,34 +395,33 @@ class SelectionsParserTest(ParsingTest):
     def test_success(self):
         self.assertParserResults(
             "{ id }",
-            '{"name": "id", "type": "Field"}'
+            '{"@f": "id"}'
         )
         self.assertParserResults(
             "{ id name }",
-            '{"name": "id", "type": "Field"}',
-            '{"name": "name", "type": "Field"}'
+            '{"@f": "id"}',
+            '{"@f": "name"}'
         )
         self.assertParserResults(
             "{ id ... { name }}",
-            '{"name": "id", "type": "Field"}',
-            '{"selections": [{"name": "name", "type": "Field"}], "type": "InlineFragment"}'
+            '{"@f": "id"}',
+            '{"@frg-inline": null, "selections": [{"@f": "name"}]}'
         )
         self.assertParserResults(
             "{ id ... foo }",
-            '{"name": "id", "type": "Field"}',
-            '{"fragment_name": "foo", "type": "FragmentSpread"}'
+            '{"@f": "id"}',
+            '{"@frg-spread": "foo"}'
         )
         self.assertParserResults(
             "{ id ... { name } ... foo}",
-            '{"name": "id", "type": "Field"}',
-            '{"selections": [{"name": "name", "type": "Field"}], "type": "InlineFragment"}',
-            '{"fragment_name": "foo", "type": "FragmentSpread"}'
+            '{"@f": "id"}',
+            '{"@frg-inline": null, "selections": [{"@f": "name"}]}',
+            '{"@frg-spread": "foo"}'
         )
         self.assertParserResults(
             "{ id ... on Foo { name }}",
-            '{"name": "id", "type": "Field"}',
-            '{"on_type": {"@named": "Foo"}, "selections": [{"name": "name", "type": "Field"}], '
-            '"type": "InlineFragment"}',
+            '{"@f": "id"}',
+            '{"@frg-inline": null, "on_type": {"@named": "Foo"}, "selections": [{"@f": "name"}]}',
         )
 
     def test_errors(self):

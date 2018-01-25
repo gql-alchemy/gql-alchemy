@@ -5,9 +5,7 @@ from .utils import add_if_not_empty, add_if_not_none, PrimitiveType, PrimitiveSe
 
 class GraphQlModelType(PrimitiveSerializable):
     def to_primitive(self) -> MutableMapping[str, PrimitiveType]:
-        return {
-            "type": type(self).__name__
-        }
+        raise NotImplementedError()
 
 
 class Document(GraphQlModelType):
@@ -19,7 +17,7 @@ class Document(GraphQlModelType):
         self.fragments = fragments
 
     def to_primitive(self):
-        p = super().to_primitive()
+        p = {"@doc": None}
         add_if_not_empty(p, "operations", self.operations)
         add_if_not_empty(p, "fragments", self.fragments)
         return p
@@ -42,8 +40,11 @@ class Operation(GraphQlModelType):
         self.selections = selections
 
     def to_primitive(self):
-        p = super().to_primitive()
-        add_if_not_none(p, "name", self.name)
+        if type(self).__name__ == "Query":
+            p = {"@q": self.name}
+        else:
+            p = {"@m": self.name}
+
         add_if_not_empty(p, "variables", self.variables)
         add_if_not_empty(p, "directives", self.directives)
         add_if_not_empty(p, "selections", self.selections)
@@ -120,8 +121,7 @@ class Directive(GraphQlModelType):
         self.arguments = arguments
 
     def to_primitive(self):
-        d = super().to_primitive()
-        d["name"] = self.name
+        d = {"@dir": self.name}
         add_if_not_empty(d, "arguments", self.arguments)
         return d
 
@@ -264,9 +264,8 @@ class Fragment(GraphQlModelType):
         self.selections = selections
 
     def to_primitive(self):
-        d = super().to_primitive()
-        d["name"] = self.name
-        d["on_type"] = self.on_type.to_primitive()
+        d = {"@frg": self.name, "on_type": self.on_type.to_primitive()}
+
         add_if_not_empty(d, "directives", self.directives)
         add_if_not_empty(d, "selections", self.selections)
         return d
@@ -295,9 +294,9 @@ class Field(Selection):
         self.selections = selections
 
     def to_primitive(self):
-        d = super().to_primitive()
+        d = {"@f": self.name}
+
         add_if_not_none(d, "alias", self.alias)
-        d["name"] = self.name
         add_if_not_empty(d, "arguments", self.arguments)
         add_if_not_empty(d, "directives", self.directives)
         add_if_not_empty(d, "selections", self.selections)
@@ -313,8 +312,7 @@ class FragmentSpread(Selection):
         self.directives = directives
 
     def to_primitive(self):
-        d = super().to_primitive()
-        d["fragment_name"] = self.fragment_name
+        d = {"@frg-spread": self.fragment_name}
         add_if_not_empty(d, "directives", self.directives)
         return d
 
@@ -333,7 +331,7 @@ class InlineFragment(Selection):
         self.selections = selections
 
     def to_primitive(self):
-        d = super().to_primitive()
+        d = {"@frg-inline": None}
 
         if self.on_type is not None:
             d["on_type"] = self.on_type.to_primitive()
