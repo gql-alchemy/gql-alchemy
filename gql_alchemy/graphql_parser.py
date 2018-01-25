@@ -54,12 +54,12 @@ class Reader:
                 self.index += 1
                 continue
 
-            if ch in " \r,":
+            if ch in " \r\t,":
                 self.index += 1
                 continue
 
             if ch == "#":
-                index = self.text_input.find("\n")
+                index = self.text_input.find("\n", self.index)
                 if index < 0:
                     self.index = len(self.text_input)
                 else:
@@ -272,13 +272,13 @@ class ElementParser:
 
     @staticmethod
     def assert_literal(reader: Reader, literal: str):
-        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')[ \t]'))
+        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z])'))
         if next_literal is None:
             raise LiteralExpected([literal], reader)
 
     @staticmethod
     def try_literal(reader: Reader, literal: str):
-        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')[ \t]'))
+        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z])'))
         return next_literal is not None
 
     @staticmethod
