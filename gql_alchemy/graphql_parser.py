@@ -184,12 +184,28 @@ def parse_document(text_input: str) -> Document:
     return document[0]
 
 
+def push_to_stack(stack: List['ElementParser'], parser: 'ElementParser', reader: Reader):
+    stack.append(parser)
+
+    log_stack(stack)
+
+    index_before = reader.index
+    parser.consume(reader)
+    index_after = reader.index
+
+    if index_after != index_before:
+        logger.debug("READ DETECTED")
+        log_position(reader)
+        log_stack(stack)
+
+
 def parse(text_input: str, initial_parser: 'ElementParser'):
-    stack: List[ElementParser] = [initial_parser]
+    stack: List[ElementParser] = []
     reader = Reader(text_input)
 
     logger.debug("=== START PARSING ===")
-    log_stack(stack)
+    logger.debug("INPUT\n%s\n===", text_input)
+    push_to_stack(stack, initial_parser, reader)
 
     while True:
         if len(stack) == 0:
@@ -225,18 +241,7 @@ def parse(text_input: str, initial_parser: 'ElementParser'):
             log_stack(stack)
 
         if to_add is not None:
-            stack.append(to_add)
-
-            log_stack(stack)
-
-            index_before = reader.index
-            to_add.consume(reader)
-            index_after = reader.index
-
-            if index_after != index_before:
-                logger.debug("READ DETECTED")
-                log_position(reader)
-                log_stack(stack)
+            push_to_stack(stack, to_add, reader)
 
 
 class ParsingError(RuntimeError):
@@ -255,7 +260,9 @@ class LiteralExpected(ParsingError):
         if len(symbols) == 1:
             msg = "Expected '{}'".format(symbols[0])
         else:
-            msg = "One of {} and {} expected".format(', '.join(symbols[-1:]), symbols[-1])
+            msg = "One of {} and {} expected".format(
+                ', '.join(('"{}"'.format(s) for s in symbols[:-1])),
+                '"{}"'.format(symbols[-1]))
         super().__init__(msg, reader)
         self.symbols = symbols
 
@@ -414,9 +421,10 @@ class OperationParser(ElementParser):
         return VariablesParser(self.variables), 0
 
     def next_directives(self):
-        del self.expected['(']
+        if '(' in self.expected:
+            del self.expected['(']
         del self.expected['@']
-        DirectivesParser(self.directives), 0
+        return DirectivesParser(self.directives), 0
 
     def next_selections(self):
         self.expected.clear()
@@ -679,7 +687,8 @@ class FieldParser(ElementParser):
         return ArgumentsParser(self.arguments), 0
 
     def next_directives(self):
-        del self.can_be['(']
+        if '(' in self.can_be:
+            del self.can_be['(']
         del self.can_be['@']
         return DirectivesParser(self.directives), 0
 

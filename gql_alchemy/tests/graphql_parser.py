@@ -1,30 +1,38 @@
-import json
 import unittest
 
-from gql_alchemy.graphql_parser import parse_document, ParsingError
-
-test = """
-mutation CreateReviewForEpisode($ep: Episode!, $review: ReviewInput!) {
-    createReview(episode: $ep, review: $review) {
-        stars
-        commentary
-    }
-}
-"""
+from gql_alchemy.graphql_parser import *
 
 
 class ParsingTest(unittest.TestCase):
-    def assertDocument(self, expected, query):
+    def init_parser(self) -> ElementParser:
+        raise NotImplementedError()
+
+    def get_result(self) -> GraphQlModelType:
+        raise NotImplementedError()
+
+    def assertParserResult(self, expected: str, query: str):
+        parser = self.init_parser()
+        parse(query, parser)
+        result = self.get_result()
+        self.assertEqual(expected, json.dumps(result.to_primitive(), sort_keys=True))
+
+    def assertParserError(self, lineno: int, query: str):
+        parser = self.init_parser()
+        with self.assertRaises(ParsingError) as cm:
+            parse(query, parser)
+        self.assertEqual(lineno, cm.exception.lineno)
+
+    def assertDocument(self, expected: str, query: str):
         d = parse_document(query)
         self.assertEqual(expected, json.dumps(d.to_primitive(), sort_keys=True))
 
-    def assertParsingError(self, lineno, query):
+    def assertDocumentError(self, lineno: int, query: str):
         with self.assertRaises(ParsingError) as cm:
             parse_document(query)
         self.assertEqual(lineno, cm.exception.lineno)
 
 
-class TestDocument(ParsingTest):
+class DocumentParserTest(ParsingTest):
     def test_shortcut_form(self):
         self.assertDocument(
             '{"operations": [{"selections": [{"name": "id", "type": "Field"}, {"name": "name", "type": "Field"}],'
@@ -50,9 +58,9 @@ class TestDocument(ParsingTest):
             "mutation {id} {id}"
         )
 
-        self.assertParsingError(1, "{id} {id}")
-        self.assertParsingError(1, "query {id} {id}")
-        self.assertParsingError(1, "{id} query {id}")
+        self.assertDocumentError(1, "{id} {id}")
+        self.assertDocumentError(1, "query {id} {id}")
+        self.assertDocumentError(1, "{id} query {id}")
 
     def test_query(self):
         self.assertDocument(
@@ -72,6 +80,36 @@ class TestDocument(ParsingTest):
             '{"fragments": [{"name": "foo", "on_type": {"@named": "Bar"}, '
             '"selections": [{"name": "id", "type": "Field"}], "type": "Fragment"}], "type": "Document"}',
             "fragment foo on Bar { id }"
+        )
+
+    def test_parse_many(self):
+        self.assertDocument(
+            '{"fragments": [{"name": "foo", "on_type": {"@named": "Bar"}, '
+            '"selections": [{"name": "id", "type": "Field"}], "type": "Fragment"}, '
+            '{"name": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"name": "id", "type": "Field"}], '
+            '"type": "Fragment"}], '
+            '"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}], "type": "Document"}',
+            "query {id} query {id} query {id}"
+            "mutation {id} mutation {id}"
+            "fragment foo on Bar {id} fragment foo1 on Bar {id}"
+        )
+        self.assertDocument(
+            '{"fragments": [{"name": "foo", "on_type": {"@named": "Bar"}, '
+            '"selections": [{"name": "id", "type": "Field"}], "type": "Fragment"}, '
+            '{"name": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"name": "id", "type": "Field"}], '
+            '"type": "Fragment"}], '
+            '"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            "query {id} mutation {id} query {id}"
+            "mutation {id} fragment foo on Bar {id}"
+            "query {id} fragment foo1 on Bar {id}"
         )
 
     def test_whitespaces(self):
@@ -103,40 +141,108 @@ class TestDocument(ParsingTest):
         )
 
     def test_failures(self):
-        self.assertParsingError(1, "sfs")
-        self.assertParsingError(1, "query{id} fds")
-        self.assertParsingError(1, "a query{id}")
+        self.assertDocumentError(1, "sfs")
+        self.assertDocumentError(1, "query{id} fds")
+        self.assertDocumentError(1, "a query{id}")
 
 
+class QueryOperationParserTest(ParsingTest):
+    def init_parser(self):
+        self.operations = []
+        return OperationParser("query", self.operations)
 
+    def get_result(self):
+        return self.operations[0]
 
-
-
-class TestQuery(ParsingTest):
-    def test_simple(self):
-        self.assertDocument(
-            '{"operations": [{"selections": [{"name": "foo", "type": "Field"}], "type": "Query"}], "type": "Document"}',
-            """
-            query {
-                foo
-            }
-            """
+    def test_operation_type(self):
+        self.assertParserResult(
+            '{"selections": [{"name": "foo", "type": "Field"}], "type": "Query"}',
+            "query {foo}"
         )
 
+        self.assertParserError(1, "mutation {foo}")
+
+    def test_optionals(self):
+        self.assertParserResult(
+            '{"selections": [{"name": "foo", "type": "Field"}], "type": "Query"}',
+            "query {foo}"
+        )
+        self.assertParserResult(
+            '{"directives": [{"name": "bar", "type": "Directive"}], "name": "foo", '
+            '"selections": [{"name": "abc", "type": "Field"}], "type": "Query", '
+            '"variables": [["id", {"@named": "Bar"}, null]]}',
+            "query foo ($id: Bar) @bar {abc}"
+        )
+        self.assertParserResult(
+            '{"directives": [{"name": "bar", "type": "Directive"}], '
+            '"selections": [{"name": "abc", "type": "Field"}], '
+            '"type": "Query", '
+            '"variables": [["id", {"@named": "Bar"}, null]]}',
+            "query ($id: Bar) @bar {abc}"
+        )
+        self.assertParserResult(
+            '{"directives": [{"name": "bar", "type": "Directive"}], '
+            '"name": "foo", '
+            '"selections": [{"name": "abc", "type": "Field"}], '
+            '"type": "Query"}',
+            "query foo @bar {abc}"
+        )
+        self.assertParserResult(
+            '{"name": "foo", '
+            '"selections": [{"name": "abc", "type": "Field"}], '
+            '"type": "Query", '
+            '"variables": [["id", {"@named": "Bar"}, null]]}',
+            "query foo ($id: Bar) {abc}"
+        )
+        self.assertParserResult(
+            '{"name": "foo", "selections": [{"name": "abc", "type": "Field"}], "type": "Query"}',
+            "query foo {abc}"
+        )
+        self.assertParserResult(
+            '{"selections": [{"name": "abc", "type": "Field"}], '
+            '"type": "Query", "variables": [["id", {"@named": "Bar"}, null]]}',
+            "query ($id: Bar) {abc}"
+        )
+        self.assertParserResult(
+            '{"directives": [{"name": "bar", "type": "Directive"}], '
+            '"selections": [{"name": "abc", "type": "Field"}], '
+            '"type": "Query"}',
+            "query @bar {abc}"
+        )
+        self.assertParserError(1, "query @bar foo {abc}")
+        self.assertParserError(1, "query ($id: Bar) foo {abc}")
+        self.assertParserError(1, "query @bar ($id: Bar) {abc}")
+
     def test_selections_required(self):
-        self.assertParsingError(
+        self.assertDocumentError(
             1,
             """ query """
         )
 
     def test_no_empty_selections(self):
-        self.assertParsingError(
+        self.assertDocumentError(
             1,
             """ query {}"""
         )
 
+    def test_no_variables(self):
+        self.assertDocumentError(
+            1,
+            """ query () {foo}"""
+        )
 
-class TestParse(unittest.TestCase):
-    def test(self):
-        d = parse_document(test)
-        print(json.dumps(d.to_primitive(), indent=2))
+
+class MutationOperationParserTest(ParsingTest):
+    def init_parser(self):
+        self.operations = []
+        return OperationParser("mutation", self.operations)
+
+    def get_result(self):
+        return self.operations[0]
+
+    def test_parse(self):
+        self.assertParserResult(
+            '{"selections": [{"name": "foo", "type": "Field"}], "type": "Mutation"}',
+            "mutation {foo}"
+        )
+        self.assertParserError(1, "query {foo}")
