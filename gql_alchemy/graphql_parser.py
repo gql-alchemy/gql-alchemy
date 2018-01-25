@@ -1,3 +1,4 @@
+import itertools
 import json
 import logging
 import re
@@ -27,7 +28,7 @@ class Reader:
         if self.text_input[self.index] == "\n":
             self.lineno -= 1
 
-    def str_next_ch(self):
+    def str_read_ch(self):
         if len(self.text_input) == self.index:
             return None
 
@@ -35,7 +36,7 @@ class Reader:
         self.index += 1
         return ch
 
-    def next_ch(self) -> Optional[str]:
+    def read_ch(self) -> Optional[str]:
         ch = self.lookup_ch()
         if ch is not None:
             self.index += 1
@@ -70,7 +71,7 @@ class Reader:
     def match_re(self, regexp):
         return regexp.match(self.text_input, self.index)
 
-    def next_re(self, regexp) -> Optional[str]:
+    def read_re(self, regexp) -> Optional[str]:
 
         # eat ignoring characters
         self.lookup_ch()
@@ -80,7 +81,15 @@ class Reader:
             self.index += len(m.group(0))
             return m.group(0)
 
-    def position_str(self) -> str:
+    def line_pos(self):
+        start = self.text_input.rfind("\n", 0, self.index)
+
+        if start < 0:
+            return self.index
+
+        return self.index - start - 1
+
+    def current_line(self) -> str:
         start = self.text_input.rfind("\n", 0, self.index)
         if start < 0:
             start = 0
@@ -89,11 +98,77 @@ class Reader:
         end = self.text_input.find("\n", self.index)
         if end < 0:
             end = len(self.text_input)
-        return "{}:  {}\u2304{}".format(self.lineno, self.text_input[start:self.index], self.text_input[self.index:end])
+        return self.text_input[start:end]
+
+    def prev_line(self):
+        prev_line_end = self.text_input.rfind("\n", 0, self.index)
+
+        if prev_line_end < 0:
+            return None
+
+        if prev_line_end == 0:
+            return ""
+
+        prev_line_start = self.text_input.rfind("\n", 0, prev_line_end)
+
+        if prev_line_start < 0:
+            prev_line_start = 0
+        else:
+            prev_line_start += 1
+
+        return self.text_input[prev_line_start:prev_line_end]
+
+    def next_line(self):
+        next_line_start = self.text_input.find("\n", self.index)
+
+        if next_line_start < 0:
+            return None
+
+        if next_line_start == len(self.text_input) - 1:
+            return ""
+
+        next_line_start += 1
+
+        next_line_end = self.text_input.find("\n", next_line_start)
+
+        if next_line_end < 0:
+            next_line_end = len(self.text_input)
+
+        return self.text_input[next_line_start:next_line_end]
 
 
-def log_stack(stack):
+def format_position(lineno: int, line_pos: int, lines: Sequence[str]):
+    result = []
+
+    if lines[0] is not None:
+        result.append("{:4d} | {}".format(lineno - 1, lines[0]))
+
+    result.append("{:4d} | {}".format(lineno, lines[1]))
+    result.append("       {}\u2303".format(" " * line_pos))
+
+    if lines[2] is not None:
+        result.append("{:4d} | {}".format(lineno + 1, lines[2]))
+
+    return result
+
+
+def log_stack(stack: Sequence['ElementParser']):
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+
     logger.debug("Stack: %s", json.dumps([i.to_dbg_repr() for i in stack]))
+
+
+def log_position(reader: Reader):
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+
+    lineno = reader.lineno
+    line_pos = reader.line_pos()
+    lines = [reader.prev_line(), reader.current_line(), reader.next_line()]
+
+    for line in format_position(lineno, line_pos, lines):
+        logger.debug(line)
 
 
 def parse_document(text_input: str) -> Document:
@@ -122,10 +197,10 @@ def parse(text_input: str, initial_parser: 'ElementParser'):
             log_stack(stack)
 
             if reader.lookup_ch() is not None:
-                logger.debug("POS %s", reader.position_str())
+                log_position(reader)
                 raise ParsingError("Not all input parsed", reader)
 
-            logger.debug("POS EOI")
+            logger.debug("EOI")
             return
 
         parser = stack[-1]
@@ -142,7 +217,7 @@ def parse(text_input: str, initial_parser: 'ElementParser'):
 
         if index_after != index_before:
             logger.debug("READ DETECTED")
-            logger.debug("POS %s", reader.position_str())
+            log_position(reader)
             log_stack(stack)
 
         if remove_count > 0:
@@ -160,18 +235,19 @@ def parse(text_input: str, initial_parser: 'ElementParser'):
 
             if index_after != index_before:
                 logger.debug("READ DETECTED")
-                logger.debug("POS %s", reader.position_str())
+                log_position(reader)
                 log_stack(stack)
 
 
 class ParsingError(RuntimeError):
     def __init__(self, msg: str, reader: Reader):
         self.msg = msg
-        self.line = reader.position_str()
         self.lineno = reader.lineno
+        self.line_pos = reader.line_pos()
+        self.lines = [reader.prev_line(), reader.current_line(), reader.next_line()]
 
     def __str__(self):
-        return ''.join([self.msg, ":\n", self.line])
+        return '\n'.join(itertools.chain([self.msg], format_position(self.lineno, self.line_pos, self.lines)))
 
 
 class LiteralExpected(ParsingError):
@@ -190,19 +266,19 @@ NAME_RE = re.compile(r'[_A-Za-z][_0-9A-Za-z]*')
 class ElementParser:
     @staticmethod
     def assert_ch(reader: Reader, ch: str):
-        next_ch = reader.next_ch()
+        next_ch = reader.read_ch()
         if next_ch != ch:
             raise LiteralExpected([ch], reader)
 
     @staticmethod
     def assert_literal(reader: Reader, literal: str):
-        next_literal = reader.next_re(re.compile(r'(?:' + literal + r')[ \t]'))
+        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')[ \t]'))
         if next_literal is None:
             raise LiteralExpected([literal], reader)
 
     @staticmethod
     def try_literal(reader: Reader, literal: str):
-        next_literal = reader.next_re(re.compile(r'(?:' + literal + r')[ \t]'))
+        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')[ \t]'))
         return next_literal is not None
 
     @staticmethod
@@ -210,14 +286,14 @@ class ElementParser:
         next_ch = reader.lookup_ch()
 
         if next_ch == ch:
-            reader.next_ch()
+            reader.read_ch()
             return True
 
         return False
 
     @staticmethod
     def read_name(reader: Reader):
-        name = reader.next_re(NAME_RE)
+        name = reader.read_re(NAME_RE)
 
         if name is None:
             raise ParsingError("Name expected", reader)
@@ -308,7 +384,7 @@ class OperationParser(ElementParser):
         ch = reader.lookup_ch()
 
         if ch not in self.expected:
-            name = reader.next_re(NAME_RE)
+            name = reader.read_re(NAME_RE)
             if name is None:
                 raise ParsingError("One of `name`, '(', '@' or '{' expected", reader)
             self.name = name
@@ -369,7 +445,7 @@ class VariablesParser(ElementParser):
         if ch == ")":
             if len(self.variables) == 0:
                 raise ParsingError("Empty variable definition is not allowed", reader)
-            reader.next_ch()
+            reader.read_ch()
             return None, 1
 
         raise LiteralExpected(["$", ")"], reader)
@@ -666,17 +742,17 @@ class ValueParser(ElementParser):
             self.set_value(NullValue())
             return None, 1
 
-        v = reader.next_re(NAME_RE)
+        v = reader.read_re(NAME_RE)
         if v is not None:
             self.set_value(EnumValue(v))
             return None, 1
 
-        v = reader.next_re(self.FLOAT_RE)
+        v = reader.read_re(self.FLOAT_RE)
         if v is not None:
             self.set_value(float(v))
             return None, 1
 
-        v = reader.next_re(self.INT_RE)
+        v = reader.read_re(self.INT_RE)
         if v is not None:
             self.set_value(int(v))
             return None, 1
@@ -764,7 +840,7 @@ class StringValueParser(ElementParser):
 
     def next(self, reader: Reader):
         while True:
-            ch = reader.str_next_ch()
+            ch = reader.str_read_ch()
 
             if ch == '"':
                 self.set_value(self.value)
@@ -782,8 +858,8 @@ class StringValueParser(ElementParser):
 
             self.value += ch
 
-    def parse_escape(self, reader):
-        ch = reader.str_next_ch()
+    def parse_escape(self, reader: Reader):
+        ch = reader.str_read_ch()
 
         if ch == "u":
             return self.parse_unicode(reader)
@@ -822,8 +898,8 @@ class StringValueParser(ElementParser):
 
         return chr(int(''.join(digits), 16))
 
-    def parse_hex_digit(self, reader):
-        ch = reader.str_next_ch()
+    def parse_hex_digit(self, reader: Reader):
+        ch = reader.str_read_ch()
 
         if ch in self.HEX_DIGITS:
             return ch
