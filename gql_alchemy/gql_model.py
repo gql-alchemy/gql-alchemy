@@ -13,13 +13,8 @@ class GraphQlModelType(PrimitiveSerializable):
 class Document(GraphQlModelType):
     operations: Sequence['Operation']
     fragments: Sequence['Fragment']
-    selections: Sequence['Selection']
 
-    def __init__(self,
-                 selections: Sequence['Selection'],
-                 operations: Sequence['Operation'],
-                 fragments: Sequence['Fragment']):
-        self.selections = selections
+    def __init__(self, operations: Sequence['Operation'], fragments: Sequence['Fragment']):
         self.operations = operations
         self.fragments = fragments
 
@@ -27,7 +22,6 @@ class Document(GraphQlModelType):
         p = super().to_primitive()
         add_if_not_empty(p, "operations", self.operations)
         add_if_not_empty(p, "fragments", self.fragments)
-        add_if_not_empty(p, "selections", self.selections)
         return p
 
 

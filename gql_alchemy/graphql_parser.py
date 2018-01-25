@@ -6,7 +6,7 @@ from typing import List
 
 from .gql_model import *
 
-logger = logging.getLogger("parser")
+logger = logging.getLogger("gql_alchemy")
 logger.setLevel(logging.DEBUG)
 sh = logging.StreamHandler()
 sh.setLevel(logging.DEBUG)
@@ -327,6 +327,10 @@ class DocumentParser(ElementParser):
         pass
 
     def next(self, reader):
+        if len(self.selections) > 0:
+            self.operations.append(Query(None, [], [], self.selections))
+            self.selections = []
+
         ch = reader.lookup_ch()
 
         if self.selection_allowed and ch == "{":
@@ -345,7 +349,7 @@ class DocumentParser(ElementParser):
             return FragmentParser(self.fragments), 0
 
         if ch is None:
-            self.set_document(Document(self.selections, self.operations, self.fragments))
+            self.set_document(Document(self.operations, self.fragments))
             return None, 1
 
         raise ParsingError("One of top-level declaration expected", reader)

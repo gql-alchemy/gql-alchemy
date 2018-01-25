@@ -27,34 +27,32 @@ class ParsingTest(unittest.TestCase):
 class TestDocument(ParsingTest):
     def test_shortcut_form(self):
         self.assertDocument(
-            '{"selections": [{"name": "id", "type": "Field"}, {"name": "name", "type": "Field"}], "type": "Document"}',
-            """
-            {
-                id
-                name
-            }
-            """
+            '{"operations": [{"selections": [{"name": "id", "type": "Field"}, {"name": "name", "type": "Field"}],'
+            ' "type": "Query"}], "type": "Document"}',
+            "{ id name }"
         )
 
         self.assertDocument(
-            '{"selections": [{"name": "user", "selections": [{"name": "id", "type": "Field"}, {"name": "name", "type": "Field"}], "type": "Field"}], "type": "Document"}',
-            """
-            {
-                user {
-                    id
-                    name
-                }
-            }
-            """
+            '{"operations": [{"selections": [{"name": "user", "selections": [{"name": "id", "type": "Field"},'
+            ' {"name": "name", "type": "Field"}], "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            "{ user {id name} }"
         )
 
-        self.assertParsingError(
-            3,
-            """
-            {id}
-            {id}
-            """
+        self.assertDocument(
+            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}], "type": "Document"}',
+            "{id} mutation {id}"
         )
+
+        self.assertDocument(
+            '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Mutation"}, '
+            '{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
+            "mutation {id} {id}"
+        )
+
+        self.assertParsingError(1, "{id} {id}")
+        self.assertParsingError(1, "query {id} {id}")
+        self.assertParsingError(1, "{id} query {id}")
 
 
 class TestQuery(ParsingTest):
