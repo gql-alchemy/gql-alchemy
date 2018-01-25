@@ -23,11 +23,6 @@ class Reader:
         self.index = 0
         self.lineno = 1
 
-    def push_back(self):
-        self.index -= 1
-        if self.text_input[self.index] == "\n":
-            self.lineno -= 1
-
     def str_read_ch(self):
         if len(self.text_input) == self.index:
             return None
@@ -430,7 +425,7 @@ class OperationParser(ElementParser):
         self.expected.clear()
         return SelectionsParser(self.selections), 0
 
-    def to_dict(self):
+    def to_dbg_repr(self):
         d = {
             "type": self.operation_type
         }
@@ -524,7 +519,8 @@ class VariableDefinitionParser(ElementParser):
         if self.type is not None:
             d["type"] = self.type.to_primitive()
 
-        add_if_not_none(d, "default", self.default)
+        if self.default is not None:
+            d["default"] = self.default.to_primitive()
         return d
 
 
@@ -589,7 +585,7 @@ class ArgumentParser(ElementParser):
         self.arguments = arguments
 
         self.name = None
-        self.value = None
+        self.value: Optional[Value] = None
 
         self.value_parsed = False
 
@@ -616,7 +612,7 @@ class ArgumentParser(ElementParser):
         add_if_not_none(d, "name", self.name)
 
         if self.value is not None:
-            d["value"] = to_primitive(self.value)
+            d["value"] = self.value.to_primitive()
 
         return d
 
@@ -707,7 +703,7 @@ class FieldParser(ElementParser):
 
 
 class ValueParser(ElementParser):
-    INT_PART = r'-?(?:[1-9][0-9]+|0)'
+    INT_PART = r'-?(?:[1-9][0-9]*|0)'
     FR_PART = r'(?:\.[0-9]+)'
     EXP_PART = r'(?:[eE][+-]?[0-9]+)'
     INT_RE = re.compile(INT_PART)
@@ -744,11 +740,11 @@ class ValueParser(ElementParser):
             return ObjectValueParser(self.set_value, self.const), 1
 
         if self.try_literal(reader, "true"):
-            self.set_value(True)
+            self.set_value(BoolValue(True))
             return None, 1
 
         if self.try_literal(reader, "false"):
-            self.set_value(True)
+            self.set_value(BoolValue(False))
             return None, 1
 
         if self.try_literal(reader, "null"):
@@ -762,12 +758,12 @@ class ValueParser(ElementParser):
 
         v = reader.read_re(self.FLOAT_RE)
         if v is not None:
-            self.set_value(float(v))
+            self.set_value(FloatValue(float(v)))
             return None, 1
 
         v = reader.read_re(self.INT_RE)
         if v is not None:
-            self.set_value(int(v))
+            self.set_value(IntValue(int(v)))
             return None, 1
 
         raise ParsingError("Value expected", reader)
@@ -792,14 +788,14 @@ class ListValueParser(ElementParser):
 
             return None, 1
 
-        return ValueParser(self.append_value, self.const)
+        return ValueParser(self.append_value, self.const), 0
 
     def append_value(self, v):
         self.values.append(v)
 
     def to_dbg_repr(self):
         d = super().to_dbg_repr()
-        d["values"] = [to_primitive(v) for v in self.values]
+        add_if_not_empty(d, "values", self.values)
         return d
 
 
@@ -826,7 +822,7 @@ class ObjectValueParser(ElementParser):
 
         self.assert_ch(reader, ":")
 
-        return ValueParser(self.add_value(name), self.const)
+        return ValueParser(self.add_value(name), self.const), 0
 
     def add_value(self, name):
         def add(v):
@@ -836,7 +832,7 @@ class ObjectValueParser(ElementParser):
 
     def to_dbg_repr(self):
         d = super().to_dbg_repr()
-        d["values"] = dict(((k, to_primitive(v)) for k, v in self.values.items()))
+        d["values"] = dict(((k, v.to_primitive()) for k, v in self.values.items()))
         return d
 
 
@@ -856,7 +852,7 @@ class StringValueParser(ElementParser):
             ch = reader.str_read_ch()
 
             if ch == '"':
-                self.set_value(self.value)
+                self.set_value(StrValue(self.value))
                 return None, 1
 
             if ch == '\\':

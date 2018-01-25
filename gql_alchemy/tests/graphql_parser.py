@@ -7,7 +7,7 @@ class ParsingTest(unittest.TestCase):
     def init_parser(self) -> ElementParser:
         raise NotImplementedError()
 
-    def get_result(self) -> GraphQlModelType:
+    def get_result(self) -> Union[GraphQlModelType, List[GraphQlModelType]]:
         raise NotImplementedError()
 
     def assertParserResult(self, expected: str, query: str):
@@ -21,6 +21,14 @@ class ParsingTest(unittest.TestCase):
         with self.assertRaises(ParsingError) as cm:
             parse(query, parser)
         self.assertEqual(lineno, cm.exception.lineno)
+
+    def assertParserResults(self, query: str, *expected: str):
+        parser = self.init_parser()
+        parse(query, parser)
+        result = self.get_result()
+        self.assertEqual(len(expected), len(result))
+        for e, r in zip(expected, result):
+            self.assertEqual(e, json.dumps(r.to_primitive(), sort_keys=True))
 
     def assertDocument(self, expected: str, query: str):
         d = parse_document(query)
@@ -137,7 +145,7 @@ class DocumentParserTest(ParsingTest):
     def test_comments(self):
         self.assertDocument(
             '{"operations": [{"selections": [{"name": "id", "type": "Field"}], "type": "Query"}], "type": "Document"}',
-            "# comment\n  #\nquery{id} # comment\n# query {foo}\n#\n"
+            "# comment\n  #\nquery{id} # comment\n# query {foo}\n#\n# comment"
         )
 
     def test_failures(self):
@@ -246,3 +254,87 @@ class MutationOperationParserTest(ParsingTest):
             "mutation {foo}"
         )
         self.assertParserError(1, "query {foo}")
+
+
+class VariablesParserTest(ParsingTest):
+    def init_parser(self):
+        self.variables = []
+        return VariablesParser(self.variables)
+
+    def get_result(self):
+        return self.variables
+
+    def test_parse(self):
+        self.assertParserResults(
+            "($foo: Bar)",
+            '["foo", {"@named": "Bar"}, null]'
+        )
+
+        self.assertParserResults(
+            "($foo: Bar = 3)",
+            '["foo", {"@named": "Bar"}, {"@int": 3}]'
+        )
+
+        self.assertParserResults(
+            "($foo: Bar!)",
+            '["foo", {"@named!": "Bar"}, null]'
+        )
+
+        self.assertParserResults(
+            "($foo: Bar! = 3)",
+            '["foo", {"@named!": "Bar"}, {"@int": 3}]'
+        )
+
+        self.assertParserResults(
+            "($foo: [Bar])",
+            '["foo", {"@list": {"@named": "Bar"}}, null]'
+        )
+
+        self.assertParserResults(
+            "($foo: [[Bar]])",
+            '["foo", {"@list": {"@list": {"@named": "Bar"}}}, null]'
+        )
+
+        self.assertParserResults(
+            "($foo: [Bar]!)",
+            '["foo", {"@list!": {"@named": "Bar"}}, null]'
+        )
+
+        self.assertParserResults(
+            "($foo: [[Bar!]!]!)",
+            '["foo", {"@list!": {"@list!": {"@named!": "Bar"}}}, null]'
+        )
+
+        self.assertParserResults(
+            "($foo: [Bar] = [3])",
+            '["foo", {"@list": {"@named": "Bar"}}, {"@const-list": [{"@int": 3}]}]'
+        )
+
+        self.assertParserResults(
+            "($foo: Bar = 3 $a: [B], $g: ggg)",
+            '["foo", {"@named": "Bar"}, {"@int": 3}]',
+            '["a", {"@list": {"@named": "B"}}, null]',
+            '["g", {"@named": "ggg"}, null]'
+        )
+
+    def test_error(self):
+        self.assertParserError(1, "()")
+        self.assertParserError(1, "(foo: Bar)")
+        self.assertParserError(1, "($foo Bar)")
+        self.assertParserError(1, "($foo Bar 3)")
+
+
+class ConstValueParserTest(ParsingTest):
+    def init_parser(self):
+        self.value = None
+
+        def set_value(v):
+            self.value = v
+
+        return ValueParser(set_value, True)
+
+    def get_result(self):
+        return self.value
+
+    def test_simple(self):
+        self.assertParserResult('{"@int": 3}', "3")

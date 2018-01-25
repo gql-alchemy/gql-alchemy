@@ -69,7 +69,7 @@ class VariableDefinition(GraphQlModelType):
         self.default = default
 
     def to_primitive(self):
-        return [self.name, self.type.to_primitive(), self.default]
+        return [self.name, self.type.to_primitive(), None if self.default is None else self.default.to_primitive()]
 
 
 class Type(GraphQlModelType):
@@ -126,9 +126,11 @@ class Directive(GraphQlModelType):
         return d
 
 
-ConstValue = Union[int, float, str, bool, 'NullValue', 'EnumValue', 'ConstListValue', 'ConstObjectValue']
+ConstValue = Union['IntValue', 'FloatValue', 'StrValue', 'BoolValue', 'NullValue', 'EnumValue', 'ConstListValue',
+                   'ConstObjectValue']
 
-Value = Union['Variable', int, float, str, bool, 'NullValue', 'EnumValue', 'ListValue', 'ObjectValue']
+Value = Union['Variable', 'IntValue', 'FloatValue', 'StrValue', 'BoolValue', 'NullValue', 'EnumValue', 'ListValue',
+              'ObjectValue']
 
 
 class Variable(GraphQlModelType):
@@ -156,13 +158,44 @@ class EnumValue(GraphQlModelType):
         return {"@enum": self.value}
 
 
-def to_primitive(value: Union[Value, ConstValue]) -> PrimitiveType:
-    if isinstance(value, Variable) or isinstance(value, NullValue) or isinstance(value, EnumValue) \
-            or isinstance(value, ConstListValue) or isinstance(value, ListValue) \
-            or isinstance(value, ConstObjectValue) or isinstance(value, ObjectValue):
-        return value.to_primitive()
+class IntValue(GraphQlModelType):
+    value: int
 
-    return value
+    def __init__(self, value: int):
+        self.value = value
+
+    def to_primitive(self):
+        return {"@int": self.value}
+
+
+class FloatValue(GraphQlModelType):
+    value: float
+
+    def __init__(self, value: float):
+        self.value = value
+
+    def to_primitive(self):
+        return {"@float": self.value}
+
+
+class StrValue(GraphQlModelType):
+    value: str
+
+    def __init__(self, value: str):
+        self.value = value
+
+    def to_primitive(self):
+        return {"@str": self.value}
+
+
+class BoolValue(GraphQlModelType):
+    value: bool
+
+    def __init__(self, value: bool):
+        self.value = value
+
+    def to_primitive(self):
+        return {"@bool": self.value}
 
 
 class ConstListValue(GraphQlModelType):
@@ -172,7 +205,7 @@ class ConstListValue(GraphQlModelType):
         self.values = values
 
     def to_primitive(self):
-        return {"@const-list": [to_primitive(v) for v in self.values]}
+        return {"@const-list": [v.to_primitive() for v in self.values]}
 
 
 class ListValue(GraphQlModelType):
@@ -182,7 +215,7 @@ class ListValue(GraphQlModelType):
         self.values = values
 
     def to_primitive(self):
-        return {"@list": [to_primitive(v) for v in self.values]}
+        return {"@list": [v.to_primitive() for v in self.values]}
 
 
 class ConstObjectValue(GraphQlModelType):
@@ -192,7 +225,7 @@ class ConstObjectValue(GraphQlModelType):
         self.values = values
 
     def to_primitive(self):
-        return {"@const-obj": dict(((k, to_primitive(v)) for k, v in self.values.items()))}
+        return {"@const-obj": dict(((k, v.to_primitive()) for k, v in self.values.items()))}
 
 
 class ObjectValue(GraphQlModelType):
@@ -202,7 +235,7 @@ class ObjectValue(GraphQlModelType):
         self.values = values
 
     def to_primitive(self):
-        return {"@obj": dict(((k, to_primitive(v)) for k, v in self.values.items()))}
+        return {"@obj": dict(((k, v.to_primitive()) for k, v in self.values.items()))}
 
 
 class Argument(GraphQlModelType):
