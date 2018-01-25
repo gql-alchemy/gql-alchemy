@@ -423,12 +423,109 @@ class SelectionsParserTest(ParsingTest):
             '{"@f": "id"}',
             '{"@frg-inline": null, "on_type": {"@named": "Foo"}, "selections": [{"@f": "name"}]}',
         )
+        self.assertParserResults(
+            "{ id id2: id}",
+            '{"@f": "id"}',
+            '{"@f": "id", "alias": "id2"}',
+        )
 
     def test_errors(self):
         self.assertParserError(1, "{}")
         self.assertParserError(1, "{ 3 }")
         self.assertParserError(1, "{ .. on Foo {name} }")
         self.assertParserError(1, "{ ... }")
+
+
+class FieldParserTest(ParsingTest):
+    def init_parser(self):
+        self.fields = []
+        return FieldParser(self.fields)
+
+    def get_result(self):
+        return self.fields[0]
+
+    def test_parse(self):
+        self.assertParserResult(
+            '{"@f": "foo"}',
+            "foo"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar", "arguments": [["id", {"@int": 3}]], '
+            '"directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}]}',
+            "bar:foo(id: 3)@bar{abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "arguments": [["id", {"@int": 3}]], '
+            '"directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}]}',
+            "foo(id: 3)@bar{abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar", '
+            '"directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}]}',
+            "bar:foo@bar{abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar", "arguments": [["id", {"@int": 3}]], '
+            '"selections": [{"@f": "abc"}]}',
+            "bar:foo(id: 3){abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar", "arguments": [["id", {"@int": 3}]], '
+            '"directives": [{"@dir": "bar"}]}',
+            "bar:foo(id: 3)@bar"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", '
+            '"directives": [{"@dir": "bar"}], "selections": [{"@f": "abc"}]}',
+            "foo@bar{abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "arguments": [["id", {"@int": 3}]], '
+            '"selections": [{"@f": "abc"}]}',
+            "foo(id: 3){abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "arguments": [["id", {"@int": 3}]], '
+            '"directives": [{"@dir": "bar"}]}',
+            "foo(id: 3)@bar"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar", '
+            '"selections": [{"@f": "abc"}]}',
+            "bar:foo{abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar", '
+            '"directives": [{"@dir": "bar"}]}',
+            "bar:foo@bar"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar", "arguments": [["id", {"@int": 3}]]}',
+            "bar:foo(id: 3)"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "selections": [{"@f": "abc"}]}',
+            "foo{abc}"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "directives": [{"@dir": "bar"}]}',
+            "foo@bar"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "arguments": [["id", {"@int": 3}]]}',
+            "foo(id: 3)"
+        )
+        self.assertParserResult(
+            '{"@f": "foo", "alias": "bar"}',
+            "bar:foo"
+        )
+
+    def test_errors(self):
+        self.assertParserError(1, "bar!foo")
+        self.assertParserError(1, "bar:foo@bar(id: 3)(id: 3){abc}")
+        self.assertParserError(1, "bar:foo{abc}(id: 3)@bar")
+        self.assertParserError(1, "bar:foo(id: 3){abc}@bar")
+        self.assertParserError(1, "foo{}")
 
 
 class ConstValueParserTest(ParsingTest):
