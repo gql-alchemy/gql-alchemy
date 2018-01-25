@@ -607,6 +607,7 @@ class ValueParserTest(ParsingTest):
         self.assertParserError(1, '"\n"')
         self.assertParserError(1, r'"\x"')
         self.assertParserError(1, r'"x')
+        self.assertParserError(1, r'"\ui345')
 
 
 class ConstValueParserTest(ParsingTest):
@@ -640,3 +641,85 @@ class ConstValueParserTest(ParsingTest):
         self.assertParserError(1, "[{foo: $v}]")
         self.assertParserError(1, "{foo: $v}")
         self.assertParserError(1, "{foo: [$v]}")
+
+
+class FragmentSpreadParserTest(ParsingTest):
+    def init_parser(self):
+        self.fields = []
+        return FragmentSpreadParser(self.fields)
+
+    def get_result(self):
+        return self.fields[0]
+
+    def test_success(self):
+        self.assertParserResult('{"@frg-spread": "foo"}', "... foo")
+        self.assertParserResult('{"@frg-spread": "foo", "directives": [{"@dir": "bar"}]}', "... foo @bar")
+        self.assertParserResult(
+            '{"@frg-spread": "foo", "directives": [{"@dir": "bar"}, {"@dir": "abc"}]}',
+            "... foo @bar @abc"
+        )
+
+    def test_error(self):
+        self.assertParserError(1, "... ")
+        self.assertParserError(1, "... foo()")
+        self.assertParserError(1, "... foo bar")
+
+
+class InlineFragmentParserTest(ParsingTest):
+    def init_parser(self):
+        self.fields = []
+        return InlineFragmentParser(self.fields)
+
+    def get_result(self):
+        return self.fields[0]
+
+    def test_success(self):
+        self.assertParserResult('{"@frg-inline": null, "selections": [{"@f": "foo"}]}', "... {foo}")
+        self.assertParserResult(
+            '{"@frg-inline": null, "on_type": {"@named": "Bar"}, "selections": [{"@f": "foo"}]}',
+            "... on Bar {foo}"
+        )
+        self.assertParserResult(
+            '{"@frg-inline": null, "directives": [{"@dir": "abc"}], "selections": [{"@f": "foo"}]}',
+            "... @abc {foo}"
+        )
+        self.assertParserResult(
+            '{"@frg-inline": null, "directives": [{"@dir": "abc"}], "on_type": {"@named": "Bar"}, "selections": [{"@f": "foo"}]}',
+            "... on Bar @abc {foo}"
+        )
+
+    def test_errors(self):
+        self.assertParserError(1, "... on Bar")
+        self.assertParserError(1, "... @abc on Bar {foo}")
+        self.assertParserError(1, ".. on Bar {foo}")
+        self.assertParserError(1, "... {}")
+
+
+class FragmentParserTest(ParsingTest):
+    def init_parser(self):
+        self.fragments = []
+        return FragmentParser(self.fragments)
+
+    def get_result(self):
+        return self.fragments[0]
+
+    def test_success(self):
+        self.assertParserResult(
+            '{"@frg": "foo", "on_type": {"@named": "Foo"}, "selections": [{"@f": "bar"}]}',
+            "fragment foo on Foo {bar}"
+        )
+        self.assertParserResult(
+            '{"@frg": "foo", "directives": [{"@dir": "d"}], "on_type": {"@named": "Foo"}, '
+            '"selections": [{"@f": "bar"}]}',
+            "fragment foo on Foo @d {bar}"
+        )
+
+    def test_errors(self):
+        self.assertParserError(1, "fragment on Foo {bar}")
+        self.assertParserError(1, "fragment foo Foo {bar}")
+        self.assertParserError(1, "fragment foo on {bar}")
+        self.assertParserError(1, "fragment foo {bar}")
+        self.assertParserError(1, "fragment foo on Foo {}")
+        self.assertParserError(1, "fragment foo on Foo")
+        self.assertParserError(1, "fragmen foo on Foo {bar}")
+        self.assertParserError(1, "fragment on Foo foo {bar}")
