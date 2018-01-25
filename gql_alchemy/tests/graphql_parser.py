@@ -395,6 +395,54 @@ class ArgumentsParserTest(ParsingTest):
         self.assertParserError(1, "(id:)")
 
 
+class SelectionsParserTest(ParsingTest):
+    def init_parser(self):
+        self.selections = []
+        return SelectionsParser(self.selections)
+
+    def get_result(self):
+        return self.selections
+
+    def test_success(self):
+        self.assertParserResults(
+            "{ id }",
+            '{"name": "id", "type": "Field"}'
+        )
+        self.assertParserResults(
+            "{ id name }",
+            '{"name": "id", "type": "Field"}',
+            '{"name": "name", "type": "Field"}'
+        )
+        self.assertParserResults(
+            "{ id ... { name }}",
+            '{"name": "id", "type": "Field"}',
+            '{"selections": [{"name": "name", "type": "Field"}], "type": "InlineFragment"}'
+        )
+        self.assertParserResults(
+            "{ id ... foo }",
+            '{"name": "id", "type": "Field"}',
+            '{"fragment_name": "foo", "type": "FragmentSpread"}'
+        )
+        self.assertParserResults(
+            "{ id ... { name } ... foo}",
+            '{"name": "id", "type": "Field"}',
+            '{"selections": [{"name": "name", "type": "Field"}], "type": "InlineFragment"}',
+            '{"fragment_name": "foo", "type": "FragmentSpread"}'
+        )
+        self.assertParserResults(
+            "{ id ... on Foo { name }}",
+            '{"name": "id", "type": "Field"}',
+            '{"on_type": {"@named": "Foo"}, "selections": [{"name": "name", "type": "Field"}], '
+            '"type": "InlineFragment"}',
+        )
+
+    def test_errors(self):
+        self.assertParserError(1, "{}")
+        self.assertParserError(1, "{ 3 }")
+        self.assertParserError(1, "{ .. on Foo {name} }")
+        self.assertParserError(1, "{ ... }")
+
+
 class ConstValueParserTest(ParsingTest):
     def init_parser(self):
         self.value = None

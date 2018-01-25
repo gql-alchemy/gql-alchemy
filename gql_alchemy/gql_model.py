@@ -334,7 +334,10 @@ class InlineFragment(Selection):
 
     def to_primitive(self):
         d = super().to_primitive()
-        add_if_not_none(d, "on_type", self.on_type)
+
+        if self.on_type is not None:
+            d["on_type"] = self.on_type.to_primitive()
+
         add_if_not_empty(d, "directives", self.directives)
         add_if_not_empty(d, "selections", self.selections)
         return d
