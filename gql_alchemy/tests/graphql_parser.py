@@ -324,6 +324,77 @@ class VariablesParserTest(ParsingTest):
         self.assertParserError(1, "($foo Bar 3)")
 
 
+class DirectivesParserTest(ParsingTest):
+    def init_parser(self):
+        self.directives = []
+        return DirectivesParser(self.directives)
+
+    def get_result(self):
+        return self.directives
+
+    def test_parse(self):
+        self.assertParserResults(
+            ""
+        )
+
+        self.assertParserResults(
+            "@foo",
+            '{"name": "foo", "type": "Directive"}'
+        )
+
+        self.assertParserResults(
+            "@foo@bar",
+            '{"name": "foo", "type": "Directive"}',
+            '{"name": "bar", "type": "Directive"}'
+        )
+
+        self.assertParserResults(
+            "@foo @bar @abc",
+            '{"name": "foo", "type": "Directive"}',
+            '{"name": "bar", "type": "Directive"}',
+            '{"name": "abc", "type": "Directive"}'
+        )
+
+        self.assertParserResults(
+            "@foo(id: 3) @bar @abc(foo: 2.5 abc: null)",
+            '{"arguments": [["id", {"@int": 3}]], "name": "foo", "type": "Directive"}',
+            '{"name": "bar", "type": "Directive"}',
+            '{"arguments": [["foo", {"@float": 2.5}], ["abc", {"@null": null}]], "name": "abc", "type": "Directive"}'
+        )
+
+    def test_fails(self):
+        self.assertParserError(1, "@foo ()")
+        self.assertParserError(1, "foo")
+        self.assertParserError(1, "@foo bar")
+
+
+class ArgumentsParserTest(ParsingTest):
+    def init_parser(self):
+        self.arguments = []
+        return ArgumentsParser(self.arguments)
+
+    def get_result(self):
+        return self.arguments
+
+    def test_success(self):
+        self.assertParserResults(
+            "(id: 3)",
+            '["id", {"@int": 3}]'
+        )
+
+        self.assertParserResults(
+            "(id: 3 name: foo)",
+            '["id", {"@int": 3}]',
+            '["name", {"@enum": "foo"}]',
+        )
+
+    def test_fail(self):
+        self.assertParserError(1, "()")
+        self.assertParserError(1, "(id 3)")
+        self.assertParserError(1, "(id:: 3)")
+        self.assertParserError(1, "(id:)")
+
+
 class ConstValueParserTest(ParsingTest):
     def init_parser(self):
         self.value = None

@@ -247,11 +247,7 @@ class Argument(GraphQlModelType):
         self.value = value
 
     def to_primitive(self):
-        value = self.value
-        if isinstance(value, Variable):
-            value = value.to_primitive()
-
-        return [self.name, value]
+        return [self.name, self.value.to_primitive()]
 
 
 class Fragment(GraphQlModelType):
