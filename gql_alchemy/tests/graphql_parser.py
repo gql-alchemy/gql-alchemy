@@ -306,6 +306,9 @@ class VariablesParserTest(ParsingTest):
             '["g", {"@named": "ggg"}, null]'
         )
 
+    def test_const(self):
+        self.assertParserError(1, "$foo: Bar = $var")
+
     def test_error(self):
         self.assertParserError(1, "()")
         self.assertParserError(1, "(foo: Bar)")
@@ -528,6 +531,84 @@ class FieldParserTest(ParsingTest):
         self.assertParserError(1, "foo{}")
 
 
+class ValueParserTest(ParsingTest):
+    def init_parser(self):
+        self.value = None
+
+        def set_value(v):
+            self.value = v
+
+        return ValueParser(set_value)
+
+    def get_result(self):
+        return self.value
+
+    def test_int(self):
+        self.assertParserResult('{"@int": 0}', "0")
+        self.assertParserResult('{"@int": 0}', "-0")
+        self.assertParserResult('{"@int": 3}', "3")
+        self.assertParserResult('{"@int": -3}', "-3")
+        self.assertParserResult('{"@int": 1234567890}', "1234567890")
+        self.assertParserResult('{"@int": -1234567890}', "-1234567890")
+        self.assertParserError(1, '01')
+
+    def test_float(self):
+        self.assertParserResult('{"@float": 0.0}', "0.0")
+        self.assertParserResult('{"@float": -0.0}', "-0.0")
+        self.assertParserResult('{"@float": 0.0123456789}', "0.0123456789")
+        self.assertParserResult('{"@float": -0.0123456789}', "-0.0123456789")
+
+        self.assertParserResult('{"@float": 10.0}', "0.1e2")
+        self.assertParserResult('{"@float": 10.0}', "0.1E2")
+        self.assertParserResult('{"@float": 0.001}', "0.1e-2")
+        self.assertParserResult('{"@float": 10.0}', "0.1e+2")
+        self.assertParserResult('{"@float": -10.0}', "-0.1e2")
+        self.assertParserResult('{"@float": -10.0}', "-0.1E2")
+        self.assertParserResult('{"@float": -0.001}', "-0.1e-2")
+        self.assertParserResult('{"@float": -10.0}', "-0.1e+2")
+
+        self.assertParserResult('{"@float": 100.0}', "1e2")
+        self.assertParserResult('{"@float": 100.0}', "1E2")
+        self.assertParserResult('{"@float": 0.01}', "1e-2")
+        self.assertParserResult('{"@float": 100.0}', "1e+2")
+        self.assertParserResult('{"@float": -100.0}', "-1e2")
+        self.assertParserResult('{"@float": -100.0}', "-1E2")
+        self.assertParserResult('{"@float": -0.01}', "-1e-2")
+        self.assertParserResult('{"@float": -100.0}', "-1e+2")
+
+        self.assertParserError(1, "1.")
+
+    def test_simple(self):
+        self.assertParserResult('{"@bool": true}', "true")
+        self.assertParserResult('{"@bool": false}', "false")
+        self.assertParserResult('{"@null": null}', "null")
+        self.assertParserResult('{"@enum": "foo"}', "foo")
+        self.assertParserResult('{"@var": "foo"}', "$foo")
+
+    def test_list(self):
+        self.assertParserResult('{"@list": []}', "[]")
+        self.assertParserResult('{"@list": [{"@int": 1}]}', "[1]")
+        self.assertParserResult('{"@list": [{"@int": 1}, {"@int": 2}]}', "[1 2]")
+        self.assertParserResult('{"@list": [{"@list": [{"@int": 1}]}]}', "[[1]]")
+        self.assertParserResult('{"@list": [{"@obj": {"foo": {"@int": 1}}}, {"@int": 1}]}', "[{foo: 1} 1]")
+        self.assertParserResult('{"@list": [{"@obj": {"foo": {"@var": "v"}}}, {"@var": "r"}]}', "[{foo: $v} $r]")
+
+    def test_obj(self):
+        self.assertParserResult('{"@obj": {}}', "{}")
+        self.assertParserResult('{"@obj": {"x": {"@int": 1}}}', "{x: 1}")
+        self.assertParserResult('{"@obj": {"x": {"@list": [{"@int": 1}]}, "y": {"@int": 2}}}', "{x: [1] y: 2}")
+        self.assertParserResult('{"@obj": {"x": {"@list": [{"@var": "v"}]}, "y": {"@var": "r"}}}', "{x: [$v] y: $r}")
+
+    def test_str(self):
+        self.assertParserResult('{"@str": ""}', '""')
+        self.assertParserResult('{"@str": "foo"}', '"foo"')
+        self.assertParserResult(r'{"@str": "\u20ac\"\\/\b\f\n\r\t\u20ac"}', r'"\u20ac\"\\\/\b\f\n\r\t\u20AC"')
+
+        self.assertParserError(1, '"\n"')
+        self.assertParserError(1, r'"\x"')
+        self.assertParserError(1, r'"x')
+
+
 class ConstValueParserTest(ParsingTest):
     def init_parser(self):
         self.value = None
@@ -540,5 +621,22 @@ class ConstValueParserTest(ParsingTest):
     def get_result(self):
         return self.value
 
-    def test_simple(self):
-        self.assertParserResult('{"@int": 3}', "3")
+    def test_success(self):
+        self.assertParserResult('{"@int": 0}', "0")
+        self.assertParserResult('{"@float": 0.0}', "0.0")
+        self.assertParserResult('{"@bool": true}', "true")
+        self.assertParserResult('{"@bool": false}', "false")
+        self.assertParserResult('{"@null": null}', "null")
+        self.assertParserResult('{"@enum": "foo"}', "foo")
+        self.assertParserResult('{"@const-list": []}', "[]")
+        self.assertParserResult('{"@const-list": [{"@int": 1}]}', "[1]")
+        self.assertParserResult('{"@const-obj": {}}', "{}")
+        self.assertParserResult('{"@const-obj": {"x": {"@int": 1}}}', "{x: 1}")
+        self.assertParserResult('{"@str": ""}', '""')
+
+    def test_errors(self):
+        self.assertParserError(1, "$v")
+        self.assertParserError(1, "[$v]")
+        self.assertParserError(1, "[{foo: $v}]")
+        self.assertParserError(1, "{foo: $v}")
+        self.assertParserError(1, "{foo: [$v]}")

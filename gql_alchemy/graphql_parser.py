@@ -274,13 +274,13 @@ class ElementParser:
 
     @staticmethod
     def assert_literal(reader: Reader, literal: str):
-        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z])'))
+        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z]|$)'))
         if next_literal is None:
             raise LiteralExpected([literal], reader)
 
     @staticmethod
     def try_literal(reader: Reader, literal: str):
-        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z])'))
+        next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z]|$)'))
         return next_literal is not None
 
     @staticmethod
