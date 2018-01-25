@@ -2,8 +2,7 @@ import unittest
 
 from gql_alchemy.graphql_parser import *
 
-
-# logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.DEBUG)
 # sh = logging.StreamHandler()
 # sh.setLevel(logging.DEBUG)
 # logger.addHandler(sh)
