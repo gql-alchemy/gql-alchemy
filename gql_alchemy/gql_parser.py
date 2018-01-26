@@ -2,18 +2,19 @@ import itertools
 import json
 import logging
 import re
-from typing import List
+from typing import List, Tuple
 
 from .gql_model import *
 
 logger = logging.getLogger("gql_alchemy")
+
 
 class Reader:
     text_input: str
     index: int
     lineno: int
 
-    def __init__(self, text_input: str):
+    def __init__(self, text_input: str) -> None:
         self.text_input = text_input
         self.index = 0
         self.lineno = 1
@@ -70,6 +71,8 @@ class Reader:
         if m:
             self.index += len(m.group(0))
             return m.group(0)
+
+        return None
 
     def line_pos(self):
         start = self.text_input.rfind("\n", 0, self.index)
@@ -235,7 +238,7 @@ def parse(text_input: str, initial_parser: 'ElementParser'):
 
 
 class ParsingError(RuntimeError):
-    def __init__(self, msg: str, reader: Reader):
+    def __init__(self, msg: str, reader: Reader) -> None:
         self.msg = msg
         self.lineno = reader.lineno
         self.line_pos = reader.line_pos()
@@ -246,7 +249,7 @@ class ParsingError(RuntimeError):
 
 
 class LiteralExpected(ParsingError):
-    def __init__(self, symbols: Sequence[str], reader: Reader):
+    def __init__(self, symbols: Sequence[str], reader: Reader) -> None:
         if len(symbols) == 1:
             msg = "Expected '{}'".format(symbols[0])
         else:
@@ -293,14 +296,14 @@ class ElementParser:
         name = reader.read_re(NAME_RE)
 
         if name is None:
-            raise ParsingError("Name expected", reader)
+            raise ParsingError("Name expected (forgot to finish selections by '}'?)", reader)
 
         return name
 
     def consume(self, reader: Reader):
         raise NotImplementedError()
 
-    def next(self, reader: Reader) -> (Optional['ElementParser'], int):
+    def next(self, reader: Reader) -> Tuple[Optional['ElementParser'], int]:
         raise NotImplementedError()
 
     def to_dbg_repr(self) -> PrimitiveType:
@@ -310,12 +313,12 @@ class ElementParser:
 
 
 class DocumentParser(ElementParser):
-    def __init__(self, set_document):
+    def __init__(self, set_document) -> None:
         self.set_document = set_document
 
-        self.operations = []
-        self.fragments = []
-        self.selections = []
+        self.operations: List[Operation] = []
+        self.fragments: List[Fragment] = []
+        self.selections: List[Selection] = []
 
         self.selection_allowed = True
         self.query_allowed = True
@@ -364,11 +367,11 @@ class OperationParser(ElementParser):
     directives: List[Directive]
     selections: List[Selection]
 
-    def __init__(self, operation_type, operations: List[Operation]):
+    def __init__(self, operation_type, operations: List[Operation]) -> None:
         self.operation_type = operation_type
         self.operations = operations
 
-        self.name = None
+        self.name: Optional[str] = None
         self.variables = []
         self.directives = []
         self.selections = []
@@ -432,7 +435,7 @@ class OperationParser(ElementParser):
 
 
 class VariablesParser(ElementParser):
-    def __init__(self, variables: List[VariableDefinition]):
+    def __init__(self, variables: List[VariableDefinition]) -> None:
         self.variables = variables
 
     def consume(self, reader):
@@ -456,12 +459,12 @@ class VariablesParser(ElementParser):
 class VariableDefinitionParser(ElementParser):
     type: Optional[Type]
 
-    def __init__(self, variables: List[VariableDefinition]):
+    def __init__(self, variables: List[VariableDefinition]) -> None:
         self.variables = variables
 
-        self.name = None
-        self.type = None
-        self.default = None
+        self.name: Optional[str] = None
+        self.type: Optional[Type] = None
+        self.default: Optional[ConstValue] = None
 
         self.default_checked = False
 
@@ -503,6 +506,9 @@ class VariableDefinitionParser(ElementParser):
 
                 return ValueParser(set_default, True), 0
 
+        if self.name is None or self.type is None:
+            raise RuntimeError("Unexpected `None`")
+
         self.variables.append(VariableDefinition(self.name, self.type, self.default))
 
         return None, 1
@@ -520,7 +526,7 @@ class VariableDefinitionParser(ElementParser):
 
 
 class DirectivesParser(ElementParser):
-    def __init__(self, directives: List[Directive]):
+    def __init__(self, directives: List[Directive]) -> None:
         self.directives = directives
 
     def consume(self, reader: Reader):
@@ -534,11 +540,11 @@ class DirectivesParser(ElementParser):
 
 
 class DirectiveParser(ElementParser):
-    def __init__(self, directives: List[Directive]):
+    def __init__(self, directives: List[Directive]) -> None:
         self.directives = directives
 
         self.name = None
-        self.arguments = []
+        self.arguments: List[Argument] = []
 
         self.arguments_checked = False
 
@@ -554,12 +560,15 @@ class DirectiveParser(ElementParser):
             if reader.lookup_ch() == "(":
                 return ArgumentsParser(self.arguments), 0
 
+        if self.name is None:
+            raise RuntimeError("Unexpected `None`")
+
         self.directives.append(Directive(self.name, self.arguments))
         return None, 1
 
 
 class ArgumentsParser(ElementParser):
-    def __init__(self, arguments: List[Argument]):
+    def __init__(self, arguments: List[Argument]) -> None:
         self.arguments = arguments
 
     def consume(self, reader: Reader):
@@ -576,10 +585,10 @@ class ArgumentsParser(ElementParser):
 
 
 class ArgumentParser(ElementParser):
-    def __init__(self, arguments: List[Argument]):
+    def __init__(self, arguments: List[Argument]) -> None:
         self.arguments = arguments
 
-        self.name = None
+        self.name: Optional[str] = None
         self.value: Optional[Value] = None
 
         self.value_parsed = False
@@ -591,7 +600,12 @@ class ArgumentParser(ElementParser):
 
     def next(self, reader: Reader):
         if self.value_parsed:
+
+            if self.name is None or self.value is None:
+                raise RuntimeError("Unexpected `None`")
+
             self.arguments.append(Argument(self.name, self.value))
+
             return None, 1
 
         self.value_parsed = True
@@ -615,7 +629,7 @@ class ArgumentParser(ElementParser):
 class SelectionsParser(ElementParser):
     DETECT_FRAGMENT_SPREAD_RE = re.compile(r'\.\.\.[ \t]+([_A-Za-z][_0-9A-Za-z]*)')
 
-    def __init__(self, selections: List[Selection]):
+    def __init__(self, selections: List[Selection]) -> None:
         self.selections = selections
 
     def consume(self, reader: Reader):
@@ -639,14 +653,14 @@ class SelectionsParser(ElementParser):
 
 
 class FieldParser(ElementParser):
-    def __init__(self, selections: List[Selection]):
+    def __init__(self, selections: List[Selection]) -> None:
         self.parent_selections = selections
 
-        self.alias = None
-        self.name = None
-        self.arguments = []
-        self.directives = []
-        self.selections = []
+        self.alias: Optional[str] = None
+        self.name: Optional[str] = None
+        self.arguments: List[Argument] = []
+        self.directives: List[Directive] = []
+        self.selections: List[Selection] = []
 
         self.can_be = {
             '(': self.next_arguments,
@@ -669,7 +683,11 @@ class FieldParser(ElementParser):
         if ch in self.can_be:
             return self.can_be[ch]()
 
-        self.parent_selections.append(Field(self.alias, self.name, self.arguments, self.directives, self.selections))
+        if self.name is None:
+            raise RuntimeError("Unexpected `None`")
+
+        self.parent_selections.append(FieldSelection(self.alias, self.name, self.arguments, self.directives,
+                                                     self.selections))
 
         return None, 1
 
@@ -704,7 +722,7 @@ class ValueParser(ElementParser):
     INT_RE = re.compile(INT_PART)
     FLOAT_RE = re.compile(INT_PART + r'(?:' + FR_PART + EXP_PART + '?|' + EXP_PART + ')')
 
-    def __init__(self, set_value, const=False):
+    def __init__(self, set_value, const=False) -> None:
         self.set_value = set_value
         self.const = const
 
@@ -765,11 +783,11 @@ class ValueParser(ElementParser):
 
 
 class ListValueParser(ElementParser):
-    def __init__(self, set_value, const):
+    def __init__(self, set_value, const) -> None:
         self.set_value = set_value
         self.const = const
 
-        self.values = []
+        self.values: List[Value] = []
 
     def consume(self, reader: Reader):
         self.assert_ch(reader, "[")
@@ -777,7 +795,7 @@ class ListValueParser(ElementParser):
     def next(self, reader: Reader):
         if self.read_if(reader, "]"):
             if self.const:
-                self.set_value(ConstListValue(self.values))
+                self.set_value(ConstListValue(self.values))  # type: ignore
             else:
                 self.set_value(ListValue(self.values))
 
@@ -795,11 +813,11 @@ class ListValueParser(ElementParser):
 
 
 class ObjectValueParser(ElementParser):
-    def __init__(self, set_value, const):
+    def __init__(self, set_value, const) -> None:
         self.set_value = set_value
         self.const = const
 
-        self.values = {}
+        self.values: Dict[str, Value] = {}
 
     def consume(self, reader: Reader):
         self.assert_ch(reader, "{")
@@ -807,7 +825,7 @@ class ObjectValueParser(ElementParser):
     def next(self, reader: Reader):
         if self.read_if(reader, "}"):
             if self.const:
-                self.set_value(ConstObjectValue(self.values))
+                self.set_value(ConstObjectValue(self.values))  # type: ignore
             else:
                 self.set_value(ObjectValue(self.values))
 
@@ -834,7 +852,7 @@ class ObjectValueParser(ElementParser):
 class StringValueParser(ElementParser):
     HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
-    def __init__(self, set_value):
+    def __init__(self, set_value) -> None:
         self.set_value = set_value
 
         self.value = ""
@@ -917,11 +935,11 @@ class StringValueParser(ElementParser):
 
 
 class FragmentSpreadParser(ElementParser):
-    def __init__(self, selections: List[Selection]):
+    def __init__(self, selections: List[Selection]) -> None:
         self.selections = selections
 
-        self.name = None
-        self.directives = []
+        self.name: Optional[str] = None
+        self.directives: List[Directive] = []
 
     def consume(self, reader: Reader):
         self.assert_literal(reader, "...")
@@ -931,6 +949,9 @@ class FragmentSpreadParser(ElementParser):
     def next(self, reader: Reader):
         if reader.lookup_ch() == '@':
             return DirectivesParser(self.directives), 0
+
+        if self.name is None:
+            raise RuntimeError("Unexpected `None`")
 
         self.selections.append(FragmentSpread(self.name, self.directives))
 
@@ -945,12 +966,12 @@ class FragmentSpreadParser(ElementParser):
 class InlineFragmentParser(ElementParser):
     on_type: Optional[NamedType]
 
-    def __init__(self, selections: List[Selection]):
+    def __init__(self, selections: List[Selection]) -> None:
         self.parent_selections = selections
 
-        self.on_type = None
-        self.directives = []
-        self.selections = []
+        self.on_type: Optional[NamedType] = None
+        self.directives: List[Directive] = []
+        self.selections: List[Selection] = []
 
         self.directives_parsed = False
         self.selections_parsed = False
@@ -989,13 +1010,13 @@ class InlineFragmentParser(ElementParser):
 
 
 class FragmentParser(ElementParser):
-    def __init__(self, fragments: List[Fragment]):
+    def __init__(self, fragments: List[Fragment]) -> None:
         self.fragments = fragments
 
-        self.name = None
-        self.on_type = None
-        self.directives = []
-        self.selections = []
+        self.name: Optional[str] = None
+        self.on_type: Optional[NamedType] = None
+        self.directives: List[Directive] = []
+        self.selections: List[Selection] = []
 
         self.directives_parsed = False
         self.selections_parsed = False
@@ -1023,6 +1044,9 @@ class FragmentParser(ElementParser):
             self.directives_parsed = True
             self.selections_parsed = True
             return SelectionsParser(self.selections), 0
+
+        if self.name is None or self.on_type is None:
+            raise RuntimeError("Unexpected `None`")
 
         self.fragments.append(Fragment(self.name, self.on_type, self.directives, self.selections))
         return None, 1
