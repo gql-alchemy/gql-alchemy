@@ -11,14 +11,14 @@ from .utils import PrimitiveType, add_if_not_empty, add_if_not_none
 logger = logging.getLogger("gql_alchemy")
 
 
-def log_stack(stack: t.Sequence['ElementParser']):
+def log_stack(stack: t.Sequence['ElementParser']) -> None:
     if not logger.isEnabledFor(logging.DEBUG):
         return
 
     logger.debug("Stack: %s", json.dumps([i.to_dbg_repr() for i in stack]))
 
 
-def log_position(reader: Reader):
+def log_position(reader: Reader) -> None:
     if not logger.isEnabledFor(logging.DEBUG):
         return
 
@@ -31,9 +31,9 @@ def log_position(reader: Reader):
 
 
 def parse_document(text_input: str) -> qm.Document:
-    document = []
+    document: t.List[qm.Document] = []
 
-    def set_document(d):
+    def set_document(d: qm.Document) -> None:
         document.append(d)
 
     parser = DocumentParser(set_document)
@@ -43,7 +43,7 @@ def parse_document(text_input: str) -> qm.Document:
     return document[0]
 
 
-def push_to_stack(stack: t.List['ElementParser'], parser: 'ElementParser', reader: Reader):
+def push_to_stack(stack: t.List['ElementParser'], parser: 'ElementParser', reader: Reader) -> None:
     stack.append(parser)
 
     log_stack(stack)
@@ -58,7 +58,7 @@ def push_to_stack(stack: t.List['ElementParser'], parser: 'ElementParser', reade
         log_stack(stack)
 
 
-def parse(text_input: str, initial_parser: 'ElementParser'):
+def parse(text_input: str, initial_parser: 'ElementParser') -> None:
     stack: t.List[ElementParser] = []
     reader = Reader(text_input)
 
@@ -120,24 +120,24 @@ NAME_RE = re.compile(r'[_A-Za-z][_0-9A-Za-z]*')
 
 class ElementParser:
     @staticmethod
-    def assert_ch(reader: Reader, ch: str):
+    def assert_ch(reader: Reader, ch: str) -> None:
         next_ch = reader.read_ch()
         if next_ch != ch:
             raise LiteralExpected([ch], reader)
 
     @staticmethod
-    def assert_literal(reader: Reader, literal: str):
+    def assert_literal(reader: Reader, literal: str) -> None:
         next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z]|$)'))
         if next_literal is None:
             raise LiteralExpected([literal], reader)
 
     @staticmethod
-    def try_literal(reader: Reader, literal: str):
+    def try_literal(reader: Reader, literal: str) -> bool:
         next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z]|$)'))
         return next_literal is not None
 
     @staticmethod
-    def read_if(reader: Reader, ch: str):
+    def read_if(reader: Reader, ch: str) -> bool:
         next_ch = reader.lookup_ch()
 
         if next_ch == ch:
@@ -147,7 +147,7 @@ class ElementParser:
         return False
 
     @staticmethod
-    def read_name(reader: Reader):
+    def read_name(reader: Reader) -> str:
         name = reader.read_re(NAME_RE)
 
         if name is None:
@@ -155,7 +155,7 @@ class ElementParser:
 
         return name
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         raise NotImplementedError()
 
     def next(self, reader: Reader) -> t.Tuple[t.Optional['ElementParser'], int]:
@@ -168,7 +168,7 @@ class ElementParser:
 
 
 class DocumentParser(ElementParser):
-    def __init__(self, set_document) -> None:
+    def __init__(self, set_document: t.Callable[[qm.Document], None]) -> None:
         self.set_document = set_document
 
         self.operations: t.List[qm.Operation] = []
@@ -178,10 +178,10 @@ class DocumentParser(ElementParser):
         self.selection_allowed = True
         self.query_allowed = True
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         pass
 
-    def next(self, reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if len(self.selections) > 0:
             self.operations.append(qm.Query(None, [], [], self.selections))
             self.selections = []
@@ -209,8 +209,8 @@ class DocumentParser(ElementParser):
 
         raise GqlParsingError("One of top-level declaration expected", reader)
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
         add_if_not_empty(d, "ops", self.operations)
         add_if_not_empty(d, "frgs", self.fragments)
         add_if_not_empty(d, "sels", self.selections)
@@ -222,7 +222,7 @@ class OperationParser(ElementParser):
     directives: t.List[qm.Directive]
     selections: t.List[qm.Selection]
 
-    def __init__(self, operation_type, operations: t.List[qm.Operation]) -> None:
+    def __init__(self, operation_type: str, operations: t.List[qm.Operation]) -> None:
         self.operation_type = operation_type
         self.operations = operations
 
@@ -237,7 +237,7 @@ class OperationParser(ElementParser):
             '{': self.next_selections
         }
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_literal(reader, self.operation_type)
 
         ch = reader.lookup_ch()
@@ -248,7 +248,7 @@ class OperationParser(ElementParser):
                 raise GqlParsingError("One of `name`, '(', '@' or '{' expected", reader)
             self.name = name
 
-    def next(self, reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
 
         if len(self.expected) == 0:
             if self.operation_type == "query":
@@ -264,22 +264,22 @@ class OperationParser(ElementParser):
 
         return self.expected[ch]()
 
-    def next_variables(self):
+    def next_variables(self) -> t.Tuple[ElementParser, int]:
         del self.expected['(']
         return VariablesParser(self.variables), 0
 
-    def next_directives(self):
+    def next_directives(self) -> t.Tuple[ElementParser, int]:
         if '(' in self.expected:
             del self.expected['(']
         del self.expected['@']
         return DirectivesParser(self.directives), 0
 
-    def next_selections(self):
+    def next_selections(self) -> t.Tuple[ElementParser, int]:
         self.expected.clear()
         return SelectionsParser(self.selections), 0
 
-    def to_dbg_repr(self):
-        d = {
+    def to_dbg_repr(self) -> PrimitiveType:
+        d: t.Dict[str, PrimitiveType] = {
             "type": self.operation_type
         }
         add_if_not_none(d, "name", self.name)
@@ -293,10 +293,10 @@ class VariablesParser(ElementParser):
     def __init__(self, variables: t.List[qm.VariableDefinition]) -> None:
         self.variables = variables
 
-    def consume(self, reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "(")
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         ch = reader.lookup_ch()
 
         if ch == "$":
@@ -323,7 +323,7 @@ class VariableDefinitionParser(ElementParser):
 
         self.default_checked = False
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "$")
 
         self.name = self.read_name(reader)
@@ -332,7 +332,7 @@ class VariableDefinitionParser(ElementParser):
 
         self.type = self.parse_type(reader)
 
-    def parse_type(self, reader: Reader):
+    def parse_type(self, reader: Reader) -> qm.Type:
         ch = reader.lookup_ch()
 
         if ch == "[":
@@ -342,7 +342,7 @@ class VariableDefinitionParser(ElementParser):
 
         return qm.NamedType(type_name, not self.read_if(reader, "!"))
 
-    def parse_list_type(self, reader: Reader):
+    def parse_list_type(self, reader: Reader) -> qm.ListType:
         self.assert_ch(reader, "[")
 
         el_type = self.parse_type(reader)
@@ -351,15 +351,15 @@ class VariableDefinitionParser(ElementParser):
 
         return qm.ListType(el_type, not self.read_if(reader, "!"))
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if not self.default_checked:
             self.default_checked = True
 
             if self.read_if(reader, "="):
-                def set_default(v):
+                def set_default(v: qm.ConstValue) -> None:
                     self.default = v
 
-                return ValueParser(set_default, True), 0
+                return ConstValueParser(set_default), 0
 
         if self.name is None or self.type is None:
             raise RuntimeError("Unexpected `None`")
@@ -368,8 +368,8 @@ class VariableDefinitionParser(ElementParser):
 
         return None, 1
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
         add_if_not_none(d, "name", self.name)
 
         if self.type is not None:
@@ -384,10 +384,10 @@ class DirectivesParser(ElementParser):
     def __init__(self, directives: t.List[qm.Directive]) -> None:
         self.directives = directives
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         pass
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if reader.lookup_ch() == "@":
             return DirectiveParser(self.directives), 0
 
@@ -398,17 +398,17 @@ class DirectiveParser(ElementParser):
     def __init__(self, directives: t.List[qm.Directive]) -> None:
         self.directives = directives
 
-        self.name = None
+        self.name: t.Optional[str] = None
         self.arguments: t.List[qm.Argument] = []
 
         self.arguments_checked = False
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "@")
 
         self.name = self.read_name(reader)
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if not self.arguments_checked:
             self.arguments_checked = True
 
@@ -426,10 +426,10 @@ class ArgumentsParser(ElementParser):
     def __init__(self, arguments: t.List[qm.Argument]) -> None:
         self.arguments = arguments
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "(")
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if self.read_if(reader, ")"):
             if len(self.arguments) == 0:
                 raise GqlParsingError("Empty arguments list is not allowed", reader)
@@ -448,12 +448,12 @@ class ArgumentParser(ElementParser):
 
         self.value_parsed = False
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.name = self.read_name(reader)
 
         self.assert_ch(reader, ":")
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if self.value_parsed:
 
             if self.name is None or self.value is None:
@@ -465,13 +465,13 @@ class ArgumentParser(ElementParser):
 
         self.value_parsed = True
 
-        def set_value(v):
+        def set_value(v: qm.Value) -> None:
             self.value = v
 
-        return ValueParser(set_value, False), 0
+        return ValueParser(set_value), 0
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
 
         add_if_not_none(d, "name", self.name)
 
@@ -487,10 +487,10 @@ class SelectionsParser(ElementParser):
     def __init__(self, selections: t.List[qm.Selection]) -> None:
         self.selections = selections
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "{")
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if self.read_if(reader, "}"):
 
             if len(self.selections) == 0:
@@ -523,7 +523,7 @@ class FieldParser(ElementParser):
             '{': self.next_selections
         }
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         name = self.read_name(reader)
 
         if self.read_if(reader, ":"):
@@ -532,7 +532,7 @@ class FieldParser(ElementParser):
         else:
             self.name = name
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         ch = reader.lookup_ch()
 
         if ch in self.can_be:
@@ -546,22 +546,22 @@ class FieldParser(ElementParser):
 
         return None, 1
 
-    def next_arguments(self):
+    def next_arguments(self) -> t.Tuple[ElementParser, int]:
         del self.can_be['(']
         return ArgumentsParser(self.arguments), 0
 
-    def next_directives(self):
+    def next_directives(self) -> t.Tuple[ElementParser, int]:
         if '(' in self.can_be:
             del self.can_be['(']
         del self.can_be['@']
         return DirectivesParser(self.directives), 0
 
-    def next_selections(self):
+    def next_selections(self) -> t.Tuple[ElementParser, int]:
         self.can_be.clear()
         return SelectionsParser(self.selections), 0
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
         add_if_not_none(d, "name", self.name)
         add_if_not_none(d, "alias", self.alias)
         add_if_not_empty(d, "args", self.arguments)
@@ -570,42 +570,37 @@ class FieldParser(ElementParser):
         return d
 
 
-class ValueParser(ElementParser):
+ValueType = t.TypeVar("ValueType", qm.Value, qm.ConstValue)
+
+
+class GenericValueParser(ElementParser, t.Generic[ValueType]):
     INT_PART = r'-?(?:[1-9][0-9]*|0)'
     FR_PART = r'(?:\.[0-9]+)'
     EXP_PART = r'(?:[eE][+-]?[0-9]+)'
     INT_RE = re.compile(INT_PART)
     FLOAT_RE = re.compile(INT_PART + r'(?:' + FR_PART + EXP_PART + '?|' + EXP_PART + ')')
 
-    def __init__(self, set_value, const=False) -> None:
-        self.set_value = set_value
-        self.const = const
+    def __init__(self, set_value: t.Callable[[ValueType], None]) -> None:
+        self.set_value: t.Callable[[ValueType], None] = set_value
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         pass
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         ch = reader.lookup_ch()
 
         if ch == "$":
-            if self.const:
-                raise GqlParsingError("Unexpected '$'", reader)
-
-            self.assert_ch(reader, "$")
-            name = self.read_name(reader)
-
-            self.set_value(qm.Variable(name))
-
+            self.parse_and_save_variable(reader)
             return None, 1
 
         if ch == '"':
             return StringValueParser(self.set_value), 1
 
         if ch == "[":
-            return ListValueParser(self.set_value, self.const), 1
+            return self.create_list_value_parser(), 1
 
         if ch == "{":
-            return ObjectValueParser(self.set_value, self.const), 1
+            return self.create_object_value_parser(), 1
 
         if self.try_literal(reader, "true"):
             self.set_value(qm.BoolValue(True))
@@ -636,53 +631,109 @@ class ValueParser(ElementParser):
 
         raise GqlParsingError("Value expected", reader)
 
+    def parse_and_save_variable(self, reader: Reader) -> None:
+        raise NotImplementedError()
 
-class ListValueParser(ElementParser):
-    def __init__(self, set_value, const) -> None:
-        self.set_value = set_value
-        self.const = const
+    def create_list_value_parser(self) -> ElementParser:
+        raise NotImplementedError()
 
-        self.values: t.List[qm.Value] = []
+    def create_object_value_parser(self) -> ElementParser:
+        raise NotImplementedError()
 
-    def consume(self, reader: Reader):
+
+class ValueParser(GenericValueParser[qm.Value]):
+    def parse_and_save_variable(self, reader: Reader) -> None:
+        self.assert_ch(reader, "$")
+        name = self.read_name(reader)
+
+        self.set_value(qm.Variable(name))
+
+    def create_list_value_parser(self) -> ElementParser:
+        return ListValueParser(self.set_value)
+
+    def create_object_value_parser(self) -> ElementParser:
+        return ObjectValueParser(self.set_value)
+
+
+class ConstValueParser(GenericValueParser[qm.ConstValue]):
+    def parse_and_save_variable(self, reader: Reader) -> None:
+        # self.assert_ch(reader, "$")
+        # name = self.read_name(reader)
+        #
+        # self.set_value(qm.Variable(name))
+        raise GqlParsingError("Unexpected '$'", reader)
+
+    def create_list_value_parser(self) -> ElementParser:
+        return ConstListValueParser(self.set_value)
+
+    def create_object_value_parser(self) -> ElementParser:
+        return ConstObjectValueParser(self.set_value)
+
+
+class GenericListValueParser(ElementParser, t.Generic[ValueType]):
+    def __init__(self) -> None:
+        self.values: t.List[ValueType] = []
+
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "[")
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if self.read_if(reader, "]"):
-            if self.const:
-                self.set_value(qm.ConstListValue(self.values))  # type: ignore
-            else:
-                self.set_value(qm.ListValue(self.values))
+            self.save_values()
 
             return None, 1
 
-        return ValueParser(self.append_value, self.const), 0
+        return self.create_value_parser(), 0
 
-    def append_value(self, v):
+    def append_value(self, v: ValueType) -> None:
         self.values.append(v)
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
         add_if_not_empty(d, "values", self.values)
         return d
 
+    def create_value_parser(self) -> ElementParser:
+        raise NotImplementedError()
 
-class ObjectValueParser(ElementParser):
-    def __init__(self, set_value, const) -> None:
+    def save_values(self) -> None:
+        raise NotImplementedError()
+
+
+class ListValueParser(GenericListValueParser[qm.Value]):
+    def __init__(self, set_value: t.Callable[[qm.Value], None]) -> None:
+        super().__init__()
         self.set_value = set_value
-        self.const = const
 
-        self.values: t.Dict[str, qm.Value] = {}
+    def create_value_parser(self) -> ElementParser:
+        return ValueParser(self.append_value)
 
-    def consume(self, reader: Reader):
+    def save_values(self) -> None:
+        self.set_value(qm.ListValue(self.values))
+
+
+class ConstListValueParser(GenericListValueParser[qm.ConstValue]):
+    def __init__(self, set_value: t.Callable[[qm.ConstValue], None]) -> None:
+        super().__init__()
+        self.set_value = set_value
+
+    def create_value_parser(self) -> ElementParser:
+        return ConstValueParser(self.append_value)
+
+    def save_values(self) -> None:
+        self.set_value(qm.ConstListValue(self.values))
+
+
+class GenericObjectValueParser(ElementParser, t.Generic[ValueType]):
+    def __init__(self) -> None:
+        self.values: t.Dict[str, ValueType] = {}
+
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "{")
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if self.read_if(reader, "}"):
-            if self.const:
-                self.set_value(qm.ConstObjectValue(self.values))  # type: ignore
-            else:
-                self.set_value(qm.ObjectValue(self.values))
+            self.save_values()
 
             return None, 1
 
@@ -690,32 +741,62 @@ class ObjectValueParser(ElementParser):
 
         self.assert_ch(reader, ":")
 
-        return ValueParser(self.add_value(name), self.const), 0
+        return self.create_value_parser(name), 0
 
-    def add_value(self, name):
-        def add(v):
+    def add_value(self, name: str) -> t.Callable[[ValueType], None]:
+        def add(v: ValueType) -> None:
             self.values[name] = v
 
         return add
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
         d["values"] = dict(((k, v.to_primitive()) for k, v in self.values.items()))
         return d
+
+    def save_values(self) -> None:
+        raise NotImplementedError()
+
+    def create_value_parser(self, name: str) -> ElementParser:
+        raise NotImplementedError()
+
+
+class ObjectValueParser(GenericObjectValueParser[qm.Value]):
+    def __init__(self, set_value: t.Callable[[qm.Value], None]) -> None:
+        super().__init__()
+        self.set_value = set_value
+
+    def save_values(self) -> None:
+        self.set_value(qm.ObjectValue(self.values))
+
+    def create_value_parser(self, name: str) -> ElementParser:
+        return ValueParser(self.add_value(name))
+
+
+class ConstObjectValueParser(GenericObjectValueParser[qm.ConstValue]):
+    def __init__(self, set_value: t.Callable[[qm.ConstValue], None]) -> None:
+        super().__init__()
+        self.set_value = set_value
+
+    def save_values(self) -> None:
+        self.set_value(qm.ConstObjectValue(self.values))
+
+    def create_value_parser(self, name: str) -> ElementParser:
+        return ConstValueParser(self.add_value(name))
 
 
 class StringValueParser(ElementParser):
     HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
-    def __init__(self, set_value) -> None:
+    def __init__(self, set_value: t.Callable[[qm.StrValue], None]) -> None:
         self.set_value = set_value
 
         self.value = ""
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, '"')
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         while True:
             ch = reader.str_read_ch()
 
@@ -735,7 +816,7 @@ class StringValueParser(ElementParser):
 
             self.value += ch
 
-    def parse_escape(self, reader: Reader):
+    def parse_escape(self, reader: Reader) -> str:
         ch = reader.str_read_ch()
 
         if ch == "u":
@@ -767,7 +848,7 @@ class StringValueParser(ElementParser):
 
         raise GqlParsingError("Unexpected symbol '{}' after '\\' in string literal".format(ch), reader)
 
-    def parse_unicode(self, reader):
+    def parse_unicode(self, reader: Reader) -> str:
         digits = []
 
         for i in range(4):
@@ -775,7 +856,7 @@ class StringValueParser(ElementParser):
 
         return chr(int(''.join(digits), 16))
 
-    def parse_hex_digit(self, reader: Reader):
+    def parse_hex_digit(self, reader: Reader) -> str:
         ch = reader.str_read_ch()
 
         if ch in self.HEX_DIGITS:
@@ -783,8 +864,8 @@ class StringValueParser(ElementParser):
 
         raise GqlParsingError("Hex digit expected", reader)
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
         d["value"] = self.value
         return d
 
@@ -796,12 +877,12 @@ class FragmentSpreadParser(ElementParser):
         self.name: t.Optional[str] = None
         self.directives: t.List[qm.Directive] = []
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_literal(reader, "...")
 
         self.name = self.read_name(reader)
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if reader.lookup_ch() == '@':
             return DirectivesParser(self.directives), 0
 
@@ -812,10 +893,11 @@ class FragmentSpreadParser(ElementParser):
 
         return None, 1
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
         add_if_not_none(d, "name", self.name)
         add_if_not_empty(d, "dirs", self.directives)
+        return d
 
 
 class InlineFragmentParser(ElementParser):
@@ -831,7 +913,7 @@ class InlineFragmentParser(ElementParser):
         self.directives_parsed = False
         self.selections_parsed = False
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_literal(reader, "...")
 
         if self.try_literal(reader, "on"):
@@ -839,7 +921,7 @@ class InlineFragmentParser(ElementParser):
 
             self.on_type = qm.NamedType(type_name, True)
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if not self.directives_parsed and reader.lookup_ch() == "@":
             self.directives_parsed = True
             return DirectivesParser(self.directives), 0
@@ -852,8 +934,8 @@ class InlineFragmentParser(ElementParser):
         self.parent_selections.append(qm.InlineFragment(self.on_type, self.directives, self.selections))
         return None, 1
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
 
         if self.on_type is not None:
             d["on_type"] = self.on_type.to_primitive()
@@ -876,7 +958,7 @@ class FragmentParser(ElementParser):
         self.directives_parsed = False
         self.selections_parsed = False
 
-    def consume(self, reader: Reader):
+    def consume(self, reader: Reader) -> None:
         self.assert_literal(reader, "fragment")
 
         self.name = self.read_name(reader)
@@ -890,7 +972,7 @@ class FragmentParser(ElementParser):
 
         self.on_type = qm.NamedType(type_name, True)
 
-    def next(self, reader: Reader):
+    def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
         if not self.directives_parsed and reader.lookup_ch() == "@":
             self.directives_parsed = True
             return DirectivesParser(self.directives), 0
@@ -906,8 +988,8 @@ class FragmentParser(ElementParser):
         self.fragments.append(qm.Fragment(self.name, self.on_type, self.directives, self.selections))
         return None, 1
 
-    def to_dbg_repr(self):
-        d = super().to_dbg_repr()
+    def to_dbg_repr(self) -> PrimitiveType:
+        d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
 
         add_if_not_none(d, "name", self.name)
 
@@ -922,6 +1004,6 @@ class FragmentParser(ElementParser):
 
 __all__ = ["parse_document", "parse", "ElementParser", "DocumentParser", "OperationParser", "VariablesParser",
            "VariableDefinitionParser", "DirectivesParser", "DirectiveParser", "ArgumentsParser",
-           "ArgumentParser", "SelectionsParser", "FieldParser", "ValueParser", "ListValueParser",
-           "ObjectValueParser", "StringValueParser", "FragmentSpreadParser", "InlineFragmentParser",
-           "FragmentParser"]
+           "ArgumentParser", "SelectionsParser", "FieldParser", "ValueParser", "ConstValueParser",
+           "ListValueParser", "ConstListValueParser", "ObjectValueParser", "ConstObjectValueParser",
+           "StringValueParser", "FragmentSpreadParser", "InlineFragmentParser", "FragmentParser"]

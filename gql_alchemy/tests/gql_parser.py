@@ -596,6 +596,12 @@ class ValueParserTest(ParsingTest):
         self.assertParserResult('{"@enum": "foo"}', "foo")
         self.assertParserResult('{"@var": "foo"}', "$foo")
 
+    def test_variable(self):
+        self.assertParserResult('{"@obj": {"a": {"@list": [{"@obj": {"b": {"@var": "v"}}}]}}}', "{a: [{b: $v}]}")
+        self.assertParserResult('{"@list": [{"@obj": {"foo": {"@list": [{"@var": "v"}]}}}]}', "[{foo: [$v]}]")
+        self.assertParserResult('{"@list": [{"@list": [{"@list": [{"@var": "v"}]}]}]}', "[[[$v]]]")
+        self.assertParserResult('{"@obj": {"a": {"@obj": {"b": {"@obj": {"c": {"@var": "v"}}}}}}}', "{a: {b: {c: $v}}}")
+
     def test_list(self):
         self.assertParserResult('{"@list": []}', "[]")
         self.assertParserResult('{"@list": [{"@int": 1}]}', "[1]")
@@ -628,7 +634,7 @@ class ConstValueParserTest(ParsingTest):
         def set_value(v):
             self.value = v
 
-        return ValueParser(set_value, True)
+        return ConstValueParser(set_value)
 
     def get_result(self):
         return self.value
@@ -652,6 +658,11 @@ class ConstValueParserTest(ParsingTest):
         self.assertParserError(1, "[{foo: $v}]")
         self.assertParserError(1, "{foo: $v}")
         self.assertParserError(1, "{foo: [$v]}")
+        self.assertParserError(1, "{a: [{b: $v}]}")
+        self.assertParserError(1, "[{foo: [$v]}]")
+        self.assertParserError(1, "[[[$v]]]")
+        self.assertParserError(1, "{a: {b: {c: $v}}}")
+
 
 
 class FragmentSpreadParserTest(ParsingTest):

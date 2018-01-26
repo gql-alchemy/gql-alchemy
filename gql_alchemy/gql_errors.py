@@ -10,7 +10,7 @@ class GqlParsingError(Exception):
         self.line_pos = reader.line_pos()
         self.lines = [reader.prev_line(), reader.current_line(), reader.next_line()]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return '\n'.join(itertools.chain([self.msg], format_position(self.lineno, self.line_pos, self.lines)))
 
 

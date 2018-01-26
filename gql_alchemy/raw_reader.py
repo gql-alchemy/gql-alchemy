@@ -11,7 +11,7 @@ class Reader:
         self.index = 0
         self.lineno = 1
 
-    def str_read_ch(self):
+    def str_read_ch(self) -> t.Optional[str]:
         if len(self.text_input) == self.index:
             return None
 
@@ -51,10 +51,10 @@ class Reader:
 
             return ch
 
-    def match_re(self, regexp):
+    def match_re(self, regexp: t.Pattern[str]) -> t.Match[str]:
         return regexp.match(self.text_input, self.index)
 
-    def read_re(self, regexp) -> t.Optional[str]:
+    def read_re(self, regexp: t.Pattern[str]) -> t.Optional[str]:
 
         # eat ignoring characters
         self.lookup_ch()
@@ -66,7 +66,7 @@ class Reader:
 
         return None
 
-    def line_pos(self):
+    def line_pos(self) -> int:
         start = self.text_input.rfind("\n", 0, self.index)
 
         if start < 0:
@@ -85,7 +85,7 @@ class Reader:
             end = len(self.text_input)
         return self.text_input[start:end]
 
-    def prev_line(self):
+    def prev_line(self) -> t.Optional[str]:
         prev_line_end = self.text_input.rfind("\n", 0, self.index)
 
         if prev_line_end < 0:
@@ -103,7 +103,7 @@ class Reader:
 
         return self.text_input[prev_line_start:prev_line_end]
 
-    def next_line(self):
+    def next_line(self) -> t.Optional[str]:
         next_line_start = self.text_input.find("\n", self.index)
 
         if next_line_start < 0:
@@ -122,7 +122,7 @@ class Reader:
         return self.text_input[next_line_start:next_line_end]
 
 
-def format_position(lineno: int, line_pos: int, lines: t.Sequence[str]):
+def format_position(lineno: int, line_pos: int, lines: t.Sequence[t.Optional[str]]) -> t.Sequence[str]:
     result = []
 
     if lines[0] is not None:
