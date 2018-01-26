@@ -1,7 +1,13 @@
+import json
+import logging
+import typing as t
 import unittest
 
+import gql_alchemy.gql_errors as e
+import gql_alchemy.gql_query_model as qm
 from gql_alchemy.gql_parser import *
 
+logger = logging.getLogger("gql_alchemy")
 logger.setLevel(logging.DEBUG)
 # sh = logging.StreamHandler()
 # sh.setLevel(logging.DEBUG)
@@ -12,7 +18,7 @@ class ParsingTest(unittest.TestCase):
     def init_parser(self) -> ElementParser:
         raise NotImplementedError()
 
-    def get_result(self) -> Union[GraphQlModelType, List[GraphQlModelType]]:
+    def get_result(self) -> t.Union[qm.GraphQlModelType, t.List[qm.GraphQlModelType]]:
         raise NotImplementedError()
 
     def assertParserResult(self, expected: str, query: str):
@@ -23,7 +29,7 @@ class ParsingTest(unittest.TestCase):
 
     def assertParserError(self, lineno: int, query: str):
         parser = self.init_parser()
-        with self.assertRaises(ParsingError) as cm:
+        with self.assertRaises(e.GqlParsingError) as cm:
             parse(query, parser)
         self.assertEqual(lineno, cm.exception.lineno)
 
@@ -40,7 +46,7 @@ class ParsingTest(unittest.TestCase):
         self.assertEqual(expected, json.dumps(d.to_primitive(), sort_keys=True))
 
     def assertDocumentError(self, lineno: int, query: str):
-        with self.assertRaises(ParsingError) as cm:
+        with self.assertRaises(e.GqlParsingError) as cm:
             parse_document(query)
         self.assertEqual(lineno, cm.exception.lineno)
 

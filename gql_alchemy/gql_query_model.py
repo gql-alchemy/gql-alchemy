@@ -339,3 +339,10 @@ class InlineFragment(Selection):
         add_if_not_empty(d, "directives", self.directives)
         add_if_not_empty(d, "selections", self.selections)
         return d
+
+
+__all__ = ["GraphQlModelType", "Document", "Operation", "Query", "Mutation", "VariableDefinition",
+           "Type", "NamedType", "ListType", "Directive", "ConstValue", "Value", "Variable",
+           "NullValue", "EnumValue", "IntValue", "FloatValue", "StrValue", "BoolValue",
+           "ConstListValue", "ConstObjectValue", "ObjectValue", "Argument", "Fragment", "Selection",
+           "FieldSelection", "FragmentSpread", "InlineFragment"]

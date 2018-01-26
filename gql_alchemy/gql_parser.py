@@ -1,151 +1,17 @@
-import itertools
 import json
 import logging
 import re
-from typing import List, Tuple
+import typing as t
 
-from .gql_model import *
+import gql_alchemy.gql_query_model as qm
+from .gql_errors import GqlParsingError
+from .raw_reader import Reader, format_position
+from .utils import PrimitiveType, add_if_not_empty, add_if_not_none
 
 logger = logging.getLogger("gql_alchemy")
 
 
-class Reader:
-    text_input: str
-    index: int
-    lineno: int
-
-    def __init__(self, text_input: str) -> None:
-        self.text_input = text_input
-        self.index = 0
-        self.lineno = 1
-
-    def str_read_ch(self):
-        if len(self.text_input) == self.index:
-            return None
-
-        ch = self.text_input[self.index]
-        self.index += 1
-        return ch
-
-    def read_ch(self) -> Optional[str]:
-        ch = self.lookup_ch()
-        if ch is not None:
-            self.index += 1
-        return ch
-
-    def lookup_ch(self) -> Optional[str]:
-        while True:
-            if len(self.text_input) == self.index:
-                return None
-
-            ch = self.text_input[self.index]
-
-            if ch == "\n":
-                self.lineno += 1
-                self.index += 1
-                continue
-
-            if ch in " \r\t,":
-                self.index += 1
-                continue
-
-            if ch == "#":
-                index = self.text_input.find("\n", self.index)
-                if index < 0:
-                    self.index = len(self.text_input)
-                else:
-                    self.index = index
-                continue
-
-            return ch
-
-    def match_re(self, regexp):
-        return regexp.match(self.text_input, self.index)
-
-    def read_re(self, regexp) -> Optional[str]:
-
-        # eat ignoring characters
-        self.lookup_ch()
-
-        m = regexp.match(self.text_input, self.index)
-        if m:
-            self.index += len(m.group(0))
-            return m.group(0)
-
-        return None
-
-    def line_pos(self):
-        start = self.text_input.rfind("\n", 0, self.index)
-
-        if start < 0:
-            return self.index
-
-        return self.index - start - 1
-
-    def current_line(self) -> str:
-        start = self.text_input.rfind("\n", 0, self.index)
-        if start < 0:
-            start = 0
-        else:
-            start += 1
-        end = self.text_input.find("\n", self.index)
-        if end < 0:
-            end = len(self.text_input)
-        return self.text_input[start:end]
-
-    def prev_line(self):
-        prev_line_end = self.text_input.rfind("\n", 0, self.index)
-
-        if prev_line_end < 0:
-            return None
-
-        if prev_line_end == 0:
-            return ""
-
-        prev_line_start = self.text_input.rfind("\n", 0, prev_line_end)
-
-        if prev_line_start < 0:
-            prev_line_start = 0
-        else:
-            prev_line_start += 1
-
-        return self.text_input[prev_line_start:prev_line_end]
-
-    def next_line(self):
-        next_line_start = self.text_input.find("\n", self.index)
-
-        if next_line_start < 0:
-            return None
-
-        if next_line_start == len(self.text_input) - 1:
-            return ""
-
-        next_line_start += 1
-
-        next_line_end = self.text_input.find("\n", next_line_start)
-
-        if next_line_end < 0:
-            next_line_end = len(self.text_input)
-
-        return self.text_input[next_line_start:next_line_end]
-
-
-def format_position(lineno: int, line_pos: int, lines: Sequence[str]):
-    result = []
-
-    if lines[0] is not None:
-        result.append("{:4d} | {}".format(lineno - 1, lines[0]))
-
-    result.append("{:4d} | {}".format(lineno, lines[1]))
-    result.append("       {}\u2303".format(" " * line_pos))
-
-    if lines[2] is not None:
-        result.append("{:4d} | {}".format(lineno + 1, lines[2]))
-
-    return result
-
-
-def log_stack(stack: Sequence['ElementParser']):
+def log_stack(stack: t.Sequence['ElementParser']):
     if not logger.isEnabledFor(logging.DEBUG):
         return
 
@@ -164,7 +30,7 @@ def log_position(reader: Reader):
         logger.debug(line)
 
 
-def parse_document(text_input: str) -> Document:
+def parse_document(text_input: str) -> qm.Document:
     document = []
 
     def set_document(d):
@@ -177,7 +43,7 @@ def parse_document(text_input: str) -> Document:
     return document[0]
 
 
-def push_to_stack(stack: List['ElementParser'], parser: 'ElementParser', reader: Reader):
+def push_to_stack(stack: t.List['ElementParser'], parser: 'ElementParser', reader: Reader):
     stack.append(parser)
 
     log_stack(stack)
@@ -193,7 +59,7 @@ def push_to_stack(stack: List['ElementParser'], parser: 'ElementParser', reader:
 
 
 def parse(text_input: str, initial_parser: 'ElementParser'):
-    stack: List[ElementParser] = []
+    stack: t.List[ElementParser] = []
     reader = Reader(text_input)
 
     logger.debug("=== START PARSING ===")
@@ -207,7 +73,7 @@ def parse(text_input: str, initial_parser: 'ElementParser'):
 
             if reader.lookup_ch() is not None:
                 log_position(reader)
-                raise ParsingError("Not all input parsed", reader)
+                raise GqlParsingError("Not all input parsed", reader)
 
             logger.debug("EOI")
             return
@@ -237,19 +103,8 @@ def parse(text_input: str, initial_parser: 'ElementParser'):
             push_to_stack(stack, to_add, reader)
 
 
-class ParsingError(RuntimeError):
-    def __init__(self, msg: str, reader: Reader) -> None:
-        self.msg = msg
-        self.lineno = reader.lineno
-        self.line_pos = reader.line_pos()
-        self.lines = [reader.prev_line(), reader.current_line(), reader.next_line()]
-
-    def __str__(self):
-        return '\n'.join(itertools.chain([self.msg], format_position(self.lineno, self.line_pos, self.lines)))
-
-
-class LiteralExpected(ParsingError):
-    def __init__(self, symbols: Sequence[str], reader: Reader) -> None:
+class LiteralExpected(GqlParsingError):
+    def __init__(self, symbols: t.Sequence[str], reader: Reader) -> None:
         if len(symbols) == 1:
             msg = "Expected '{}'".format(symbols[0])
         else:
@@ -296,14 +151,14 @@ class ElementParser:
         name = reader.read_re(NAME_RE)
 
         if name is None:
-            raise ParsingError("Name expected (forgot to finish selections by '}'?)", reader)
+            raise GqlParsingError("Name expected (forgot to finish selections by '}'?)", reader)
 
         return name
 
     def consume(self, reader: Reader):
         raise NotImplementedError()
 
-    def next(self, reader: Reader) -> Tuple[Optional['ElementParser'], int]:
+    def next(self, reader: Reader) -> t.Tuple[t.Optional['ElementParser'], int]:
         raise NotImplementedError()
 
     def to_dbg_repr(self) -> PrimitiveType:
@@ -316,9 +171,9 @@ class DocumentParser(ElementParser):
     def __init__(self, set_document) -> None:
         self.set_document = set_document
 
-        self.operations: List[Operation] = []
-        self.fragments: List[Fragment] = []
-        self.selections: List[Selection] = []
+        self.operations: t.List[qm.Operation] = []
+        self.fragments: t.List[qm.Fragment] = []
+        self.selections: t.List[qm.Selection] = []
 
         self.selection_allowed = True
         self.query_allowed = True
@@ -328,7 +183,7 @@ class DocumentParser(ElementParser):
 
     def next(self, reader):
         if len(self.selections) > 0:
-            self.operations.append(Query(None, [], [], self.selections))
+            self.operations.append(qm.Query(None, [], [], self.selections))
             self.selections = []
 
         ch = reader.lookup_ch()
@@ -349,10 +204,10 @@ class DocumentParser(ElementParser):
             return FragmentParser(self.fragments), 0
 
         if ch is None:
-            self.set_document(Document(self.operations, self.fragments))
+            self.set_document(qm.Document(self.operations, self.fragments))
             return None, 1
 
-        raise ParsingError("One of top-level declaration expected", reader)
+        raise GqlParsingError("One of top-level declaration expected", reader)
 
     def to_dbg_repr(self):
         d = super().to_dbg_repr()
@@ -363,15 +218,15 @@ class DocumentParser(ElementParser):
 
 
 class OperationParser(ElementParser):
-    variables: List[VariableDefinition]
-    directives: List[Directive]
-    selections: List[Selection]
+    variables: t.List[qm.VariableDefinition]
+    directives: t.List[qm.Directive]
+    selections: t.List[qm.Selection]
 
-    def __init__(self, operation_type, operations: List[Operation]) -> None:
+    def __init__(self, operation_type, operations: t.List[qm.Operation]) -> None:
         self.operation_type = operation_type
         self.operations = operations
 
-        self.name: Optional[str] = None
+        self.name: t.Optional[str] = None
         self.variables = []
         self.directives = []
         self.selections = []
@@ -390,16 +245,16 @@ class OperationParser(ElementParser):
         if ch not in self.expected:
             name = reader.read_re(NAME_RE)
             if name is None:
-                raise ParsingError("One of `name`, '(', '@' or '{' expected", reader)
+                raise GqlParsingError("One of `name`, '(', '@' or '{' expected", reader)
             self.name = name
 
     def next(self, reader):
 
         if len(self.expected) == 0:
             if self.operation_type == "query":
-                self.operations.append(Query(self.name, self.variables, self.directives, self.selections))
+                self.operations.append(qm.Query(self.name, self.variables, self.directives, self.selections))
             else:
-                self.operations.append(Mutation(self.name, self.variables, self.directives, self.selections))
+                self.operations.append(qm.Mutation(self.name, self.variables, self.directives, self.selections))
             return None, 1
 
         ch = reader.lookup_ch()
@@ -435,7 +290,7 @@ class OperationParser(ElementParser):
 
 
 class VariablesParser(ElementParser):
-    def __init__(self, variables: List[VariableDefinition]) -> None:
+    def __init__(self, variables: t.List[qm.VariableDefinition]) -> None:
         self.variables = variables
 
     def consume(self, reader):
@@ -449,7 +304,7 @@ class VariablesParser(ElementParser):
 
         if ch == ")":
             if len(self.variables) == 0:
-                raise ParsingError("Empty variable definition is not allowed", reader)
+                raise GqlParsingError("Empty variable definition is not allowed", reader)
             reader.read_ch()
             return None, 1
 
@@ -457,14 +312,14 @@ class VariablesParser(ElementParser):
 
 
 class VariableDefinitionParser(ElementParser):
-    type: Optional[Type]
+    type: t.Optional[qm.Type]
 
-    def __init__(self, variables: List[VariableDefinition]) -> None:
+    def __init__(self, variables: t.List[qm.VariableDefinition]) -> None:
         self.variables = variables
 
-        self.name: Optional[str] = None
-        self.type: Optional[Type] = None
-        self.default: Optional[ConstValue] = None
+        self.name: t.Optional[str] = None
+        self.type: t.Optional[qm.Type] = None
+        self.default: t.Optional[qm.ConstValue] = None
 
         self.default_checked = False
 
@@ -485,7 +340,7 @@ class VariableDefinitionParser(ElementParser):
 
         type_name = self.read_name(reader)
 
-        return NamedType(type_name, not self.read_if(reader, "!"))
+        return qm.NamedType(type_name, not self.read_if(reader, "!"))
 
     def parse_list_type(self, reader: Reader):
         self.assert_ch(reader, "[")
@@ -494,7 +349,7 @@ class VariableDefinitionParser(ElementParser):
 
         self.assert_ch(reader, "]")
 
-        return ListType(el_type, not self.read_if(reader, "!"))
+        return qm.ListType(el_type, not self.read_if(reader, "!"))
 
     def next(self, reader: Reader):
         if not self.default_checked:
@@ -509,7 +364,7 @@ class VariableDefinitionParser(ElementParser):
         if self.name is None or self.type is None:
             raise RuntimeError("Unexpected `None`")
 
-        self.variables.append(VariableDefinition(self.name, self.type, self.default))
+        self.variables.append(qm.VariableDefinition(self.name, self.type, self.default))
 
         return None, 1
 
@@ -526,7 +381,7 @@ class VariableDefinitionParser(ElementParser):
 
 
 class DirectivesParser(ElementParser):
-    def __init__(self, directives: List[Directive]) -> None:
+    def __init__(self, directives: t.List[qm.Directive]) -> None:
         self.directives = directives
 
     def consume(self, reader: Reader):
@@ -540,11 +395,11 @@ class DirectivesParser(ElementParser):
 
 
 class DirectiveParser(ElementParser):
-    def __init__(self, directives: List[Directive]) -> None:
+    def __init__(self, directives: t.List[qm.Directive]) -> None:
         self.directives = directives
 
         self.name = None
-        self.arguments: List[Argument] = []
+        self.arguments: t.List[qm.Argument] = []
 
         self.arguments_checked = False
 
@@ -563,12 +418,12 @@ class DirectiveParser(ElementParser):
         if self.name is None:
             raise RuntimeError("Unexpected `None`")
 
-        self.directives.append(Directive(self.name, self.arguments))
+        self.directives.append(qm.Directive(self.name, self.arguments))
         return None, 1
 
 
 class ArgumentsParser(ElementParser):
-    def __init__(self, arguments: List[Argument]) -> None:
+    def __init__(self, arguments: t.List[qm.Argument]) -> None:
         self.arguments = arguments
 
     def consume(self, reader: Reader):
@@ -577,7 +432,7 @@ class ArgumentsParser(ElementParser):
     def next(self, reader: Reader):
         if self.read_if(reader, ")"):
             if len(self.arguments) == 0:
-                raise ParsingError("Empty arguments list is not allowed", reader)
+                raise GqlParsingError("Empty arguments list is not allowed", reader)
 
             return None, 1
 
@@ -585,11 +440,11 @@ class ArgumentsParser(ElementParser):
 
 
 class ArgumentParser(ElementParser):
-    def __init__(self, arguments: List[Argument]) -> None:
+    def __init__(self, arguments: t.List[qm.Argument]) -> None:
         self.arguments = arguments
 
-        self.name: Optional[str] = None
-        self.value: Optional[Value] = None
+        self.name: t.Optional[str] = None
+        self.value: t.Optional[qm.Value] = None
 
         self.value_parsed = False
 
@@ -604,7 +459,7 @@ class ArgumentParser(ElementParser):
             if self.name is None or self.value is None:
                 raise RuntimeError("Unexpected `None`")
 
-            self.arguments.append(Argument(self.name, self.value))
+            self.arguments.append(qm.Argument(self.name, self.value))
 
             return None, 1
 
@@ -629,7 +484,7 @@ class ArgumentParser(ElementParser):
 class SelectionsParser(ElementParser):
     DETECT_FRAGMENT_SPREAD_RE = re.compile(r'\.\.\.[ \t]+([_A-Za-z][_0-9A-Za-z]*)')
 
-    def __init__(self, selections: List[Selection]) -> None:
+    def __init__(self, selections: t.List[qm.Selection]) -> None:
         self.selections = selections
 
     def consume(self, reader: Reader):
@@ -639,7 +494,7 @@ class SelectionsParser(ElementParser):
         if self.read_if(reader, "}"):
 
             if len(self.selections) == 0:
-                raise ParsingError("Empty selection set is not allowed", reader)
+                raise GqlParsingError("Empty selection set is not allowed", reader)
 
             return None, 1
 
@@ -653,14 +508,14 @@ class SelectionsParser(ElementParser):
 
 
 class FieldParser(ElementParser):
-    def __init__(self, selections: List[Selection]) -> None:
+    def __init__(self, selections: t.List[qm.Selection]) -> None:
         self.parent_selections = selections
 
-        self.alias: Optional[str] = None
-        self.name: Optional[str] = None
-        self.arguments: List[Argument] = []
-        self.directives: List[Directive] = []
-        self.selections: List[Selection] = []
+        self.alias: t.Optional[str] = None
+        self.name: t.Optional[str] = None
+        self.arguments: t.List[qm.Argument] = []
+        self.directives: t.List[qm.Directive] = []
+        self.selections: t.List[qm.Selection] = []
 
         self.can_be = {
             '(': self.next_arguments,
@@ -686,8 +541,8 @@ class FieldParser(ElementParser):
         if self.name is None:
             raise RuntimeError("Unexpected `None`")
 
-        self.parent_selections.append(FieldSelection(self.alias, self.name, self.arguments, self.directives,
-                                                     self.selections))
+        self.parent_selections.append(qm.FieldSelection(self.alias, self.name, self.arguments, self.directives,
+                                                        self.selections))
 
         return None, 1
 
@@ -734,12 +589,12 @@ class ValueParser(ElementParser):
 
         if ch == "$":
             if self.const:
-                raise ParsingError("Unexpected '$'", reader)
+                raise GqlParsingError("Unexpected '$'", reader)
 
             self.assert_ch(reader, "$")
             name = self.read_name(reader)
 
-            self.set_value(Variable(name))
+            self.set_value(qm.Variable(name))
 
             return None, 1
 
@@ -753,33 +608,33 @@ class ValueParser(ElementParser):
             return ObjectValueParser(self.set_value, self.const), 1
 
         if self.try_literal(reader, "true"):
-            self.set_value(BoolValue(True))
+            self.set_value(qm.BoolValue(True))
             return None, 1
 
         if self.try_literal(reader, "false"):
-            self.set_value(BoolValue(False))
+            self.set_value(qm.BoolValue(False))
             return None, 1
 
         if self.try_literal(reader, "null"):
-            self.set_value(NullValue())
+            self.set_value(qm.NullValue())
             return None, 1
 
         v = reader.read_re(NAME_RE)
         if v is not None:
-            self.set_value(EnumValue(v))
+            self.set_value(qm.EnumValue(v))
             return None, 1
 
         v = reader.read_re(self.FLOAT_RE)
         if v is not None:
-            self.set_value(FloatValue(float(v)))
+            self.set_value(qm.FloatValue(float(v)))
             return None, 1
 
         v = reader.read_re(self.INT_RE)
         if v is not None:
-            self.set_value(IntValue(int(v)))
+            self.set_value(qm.IntValue(int(v)))
             return None, 1
 
-        raise ParsingError("Value expected", reader)
+        raise GqlParsingError("Value expected", reader)
 
 
 class ListValueParser(ElementParser):
@@ -787,7 +642,7 @@ class ListValueParser(ElementParser):
         self.set_value = set_value
         self.const = const
 
-        self.values: List[Value] = []
+        self.values: t.List[qm.Value] = []
 
     def consume(self, reader: Reader):
         self.assert_ch(reader, "[")
@@ -795,9 +650,9 @@ class ListValueParser(ElementParser):
     def next(self, reader: Reader):
         if self.read_if(reader, "]"):
             if self.const:
-                self.set_value(ConstListValue(self.values))  # type: ignore
+                self.set_value(qm.ConstListValue(self.values))  # type: ignore
             else:
-                self.set_value(ListValue(self.values))
+                self.set_value(qm.ListValue(self.values))
 
             return None, 1
 
@@ -817,7 +672,7 @@ class ObjectValueParser(ElementParser):
         self.set_value = set_value
         self.const = const
 
-        self.values: Dict[str, Value] = {}
+        self.values: t.Dict[str, qm.Value] = {}
 
     def consume(self, reader: Reader):
         self.assert_ch(reader, "{")
@@ -825,9 +680,9 @@ class ObjectValueParser(ElementParser):
     def next(self, reader: Reader):
         if self.read_if(reader, "}"):
             if self.const:
-                self.set_value(ConstObjectValue(self.values))  # type: ignore
+                self.set_value(qm.ConstObjectValue(self.values))  # type: ignore
             else:
-                self.set_value(ObjectValue(self.values))
+                self.set_value(qm.ObjectValue(self.values))
 
             return None, 1
 
@@ -865,7 +720,7 @@ class StringValueParser(ElementParser):
             ch = reader.str_read_ch()
 
             if ch == '"':
-                self.set_value(StrValue(self.value))
+                self.set_value(qm.StrValue(self.value))
                 return None, 1
 
             if ch == '\\':
@@ -873,10 +728,10 @@ class StringValueParser(ElementParser):
                 continue
 
             if ch in {"\n", "\r"}:
-                raise ParsingError("New line is not allowed in string literal", reader)
+                raise GqlParsingError("New line is not allowed in string literal", reader)
 
             if ch is None:
-                raise ParsingError("Unexpected end of input", reader)
+                raise GqlParsingError("Unexpected end of input", reader)
 
             self.value += ch
 
@@ -910,7 +765,7 @@ class StringValueParser(ElementParser):
         if ch == 't':
             return '\t'
 
-        raise ParsingError("Unexpected symbol '{}' after '\\' in string literal".format(ch), reader)
+        raise GqlParsingError("Unexpected symbol '{}' after '\\' in string literal".format(ch), reader)
 
     def parse_unicode(self, reader):
         digits = []
@@ -926,7 +781,7 @@ class StringValueParser(ElementParser):
         if ch in self.HEX_DIGITS:
             return ch
 
-        raise ParsingError("Hex digit expected", reader)
+        raise GqlParsingError("Hex digit expected", reader)
 
     def to_dbg_repr(self):
         d = super().to_dbg_repr()
@@ -935,11 +790,11 @@ class StringValueParser(ElementParser):
 
 
 class FragmentSpreadParser(ElementParser):
-    def __init__(self, selections: List[Selection]) -> None:
+    def __init__(self, selections: t.List[qm.Selection]) -> None:
         self.selections = selections
 
-        self.name: Optional[str] = None
-        self.directives: List[Directive] = []
+        self.name: t.Optional[str] = None
+        self.directives: t.List[qm.Directive] = []
 
     def consume(self, reader: Reader):
         self.assert_literal(reader, "...")
@@ -953,7 +808,7 @@ class FragmentSpreadParser(ElementParser):
         if self.name is None:
             raise RuntimeError("Unexpected `None`")
 
-        self.selections.append(FragmentSpread(self.name, self.directives))
+        self.selections.append(qm.FragmentSpread(self.name, self.directives))
 
         return None, 1
 
@@ -964,14 +819,14 @@ class FragmentSpreadParser(ElementParser):
 
 
 class InlineFragmentParser(ElementParser):
-    on_type: Optional[NamedType]
+    on_type: t.Optional[qm.NamedType]
 
-    def __init__(self, selections: List[Selection]) -> None:
+    def __init__(self, selections: t.List[qm.Selection]) -> None:
         self.parent_selections = selections
 
-        self.on_type: Optional[NamedType] = None
-        self.directives: List[Directive] = []
-        self.selections: List[Selection] = []
+        self.on_type: t.Optional[qm.NamedType] = None
+        self.directives: t.List[qm.Directive] = []
+        self.selections: t.List[qm.Selection] = []
 
         self.directives_parsed = False
         self.selections_parsed = False
@@ -982,7 +837,7 @@ class InlineFragmentParser(ElementParser):
         if self.try_literal(reader, "on"):
             type_name = self.read_name(reader)
 
-            self.on_type = NamedType(type_name, True)
+            self.on_type = qm.NamedType(type_name, True)
 
     def next(self, reader: Reader):
         if not self.directives_parsed and reader.lookup_ch() == "@":
@@ -994,7 +849,7 @@ class InlineFragmentParser(ElementParser):
             self.selections_parsed = True
             return SelectionsParser(self.selections), 0
 
-        self.parent_selections.append(InlineFragment(self.on_type, self.directives, self.selections))
+        self.parent_selections.append(qm.InlineFragment(self.on_type, self.directives, self.selections))
         return None, 1
 
     def to_dbg_repr(self):
@@ -1010,13 +865,13 @@ class InlineFragmentParser(ElementParser):
 
 
 class FragmentParser(ElementParser):
-    def __init__(self, fragments: List[Fragment]) -> None:
+    def __init__(self, fragments: t.List[qm.Fragment]) -> None:
         self.fragments = fragments
 
-        self.name: Optional[str] = None
-        self.on_type: Optional[NamedType] = None
-        self.directives: List[Directive] = []
-        self.selections: List[Selection] = []
+        self.name: t.Optional[str] = None
+        self.on_type: t.Optional[qm.NamedType] = None
+        self.directives: t.List[qm.Directive] = []
+        self.selections: t.List[qm.Selection] = []
 
         self.directives_parsed = False
         self.selections_parsed = False
@@ -1027,13 +882,13 @@ class FragmentParser(ElementParser):
         self.name = self.read_name(reader)
 
         if self.name == "on":
-            raise ParsingError("Fragment can not have name \"on\"", reader)
+            raise GqlParsingError("Fragment can not have name \"on\"", reader)
 
         self.assert_literal(reader, "on")
 
         type_name = self.read_name(reader)
 
-        self.on_type = NamedType(type_name, True)
+        self.on_type = qm.NamedType(type_name, True)
 
     def next(self, reader: Reader):
         if not self.directives_parsed and reader.lookup_ch() == "@":
@@ -1048,7 +903,7 @@ class FragmentParser(ElementParser):
         if self.name is None or self.on_type is None:
             raise RuntimeError("Unexpected `None`")
 
-        self.fragments.append(Fragment(self.name, self.on_type, self.directives, self.selections))
+        self.fragments.append(qm.Fragment(self.name, self.on_type, self.directives, self.selections))
         return None, 1
 
     def to_dbg_repr(self):
@@ -1063,3 +918,10 @@ class FragmentParser(ElementParser):
         add_if_not_empty(d, "sels", self.selections)
 
         return d
+
+
+__all__ = ["parse_document", "parse", "ElementParser", "DocumentParser", "OperationParser", "VariablesParser",
+           "VariableDefinitionParser", "DirectivesParser", "DirectiveParser", "ArgumentsParser",
+           "ArgumentParser", "SelectionsParser", "FieldParser", "ValueParser", "ListValueParser",
+           "ObjectValueParser", "StringValueParser", "FragmentSpreadParser", "InlineFragmentParser",
+           "FragmentParser"]
