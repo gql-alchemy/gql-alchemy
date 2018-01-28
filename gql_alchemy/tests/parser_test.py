@@ -3,9 +3,9 @@ import logging
 import typing as t
 import unittest
 
-import gql_alchemy.gql_errors as e
-import gql_alchemy.gql_query_model as qm
-from gql_alchemy.gql_parser import *
+import gql_alchemy.errors as e
+import gql_alchemy.query_model as qm
+from gql_alchemy.parser import *
 
 logger = logging.getLogger("gql_alchemy")
 logger.setLevel(logging.DEBUG)

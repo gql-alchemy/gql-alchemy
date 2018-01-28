@@ -2,8 +2,8 @@ import logging
 import typing as t
 import unittest
 
-import gql_alchemy.gql_schema as s
-from gql_alchemy.gql_parser import parse_document
+import gql_alchemy.schema as s
+from gql_alchemy.parser import parse_document
 from gql_alchemy.utils import PrimitiveType
 from gql_alchemy.validator import validate, GqlValidationError
 

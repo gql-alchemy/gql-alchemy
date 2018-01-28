@@ -3,8 +3,8 @@ import logging
 import re
 import typing as t
 
-import gql_alchemy.gql_query_model as qm
-from .gql_errors import GqlParsingError
+import gql_alchemy.query_model as qm
+from .errors import GqlParsingError
 from .raw_reader import Reader, format_position
 from .utils import PrimitiveType, add_if_not_empty, add_if_not_none
 

@@ -1,6 +1,6 @@
 import unittest
 
-from ..gql_schema import *
+from ..schema import *
 
 
 class Test(unittest.TestCase):

@@ -1,8 +1,8 @@
 import typing as t
 
-import gql_alchemy.gql_query_model as qm
-import gql_alchemy.gql_schema as s
-from .gql_errors import GqlValidationError
+import gql_alchemy.query_model as qm
+import gql_alchemy.schema as s
+from .errors import GqlValidationError
 from .utils import PrimitiveType
 
 

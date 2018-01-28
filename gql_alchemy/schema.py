@@ -2,7 +2,7 @@ import json
 import re
 import typing as t
 
-from .gql_errors import GqlSchemaError
+from .errors import GqlSchemaError
 from .utils import PrimitiveType
 
 NAME_RE = re.compile(r'^[_A-Za-z][_0-9A-Za-z]*$')
