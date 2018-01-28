@@ -4,7 +4,7 @@ from ..schema import *
 
 
 class Test(unittest.TestCase):
-    def test(self):
+    def test(self) -> None:
         schema = Schema(
             {
                 "t1": Object({

@@ -71,7 +71,7 @@ def validate_field_selection(field_selection: qm.FieldSelection, from_type: s.Gq
 
 
 def validate_selection_args(selection_args: t.Sequence[qm.Argument],
-                            args_definition: t.Optional[t.Mapping[str, s.InputValue]]):
+                            args_definition: t.Optional[t.Mapping[str, s.InputValue]]) -> None:
     if args_definition is None:
         if len(selection_args) > 0:
             raise GqlValidationError("Field does not support args")

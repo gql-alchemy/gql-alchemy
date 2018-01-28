@@ -18,34 +18,42 @@ class ParsingTest(unittest.TestCase):
     def init_parser(self) -> ElementParser:
         raise NotImplementedError()
 
-    def get_result(self) -> t.Union[qm.GraphQlModelType, t.List[qm.GraphQlModelType]]:
+    def get_result(self) -> t.Union[qm.GraphQlModelType, t.Sequence[qm.GraphQlModelType]]:
         raise NotImplementedError()
 
-    def assertParserResult(self, expected: str, query: str):
+    def assertParserResult(self, expected: str, query: str) -> None:
         parser = self.init_parser()
         parse(query, parser)
         result = self.get_result()
+
+        if not isinstance(result, qm.GraphQlModelType):
+            raise RuntimeError("Query model type expected")
+
         self.assertEqual(expected, json.dumps(result.to_primitive(), sort_keys=True))
 
-    def assertParserError(self, lineno: int, query: str):
+    def assertParserError(self, lineno: int, query: str) -> None:
         parser = self.init_parser()
         with self.assertRaises(e.GqlParsingError) as cm:
             parse(query, parser)
         self.assertEqual(lineno, cm.exception.lineno)
 
-    def assertParserResults(self, query: str, *expected: str):
+    def assertParserResults(self, query: str, *expected: str) -> None:
         parser = self.init_parser()
         parse(query, parser)
         result = self.get_result()
+
+        if not isinstance(result, list):
+            raise RuntimeError("List of results expected")
+
         self.assertEqual(len(expected), len(result))
         for e, r in zip(expected, result):
             self.assertEqual(e, json.dumps(r.to_primitive(), sort_keys=True))
 
-    def assertDocument(self, expected: str, query: str):
+    def assertDocument(self, expected: str, query: str) -> None:
         d = parse_document(query)
         self.assertEqual(expected, json.dumps(d.to_primitive(), sort_keys=True))
 
-    def assertDocumentError(self, lineno: int, query: str):
+    def assertDocumentError(self, lineno: int, query: str) -> None:
         with self.assertRaises(e.GqlParsingError) as cm:
             parse_document(query)
         self.assertEqual(lineno, cm.exception.lineno)
@@ -54,7 +62,7 @@ class ParsingTest(unittest.TestCase):
 class DocumentParserTest(ParsingTest):
     maxDiff = None
 
-    def test_shortcut_form(self):
+    def test_shortcut_form(self) -> None:
         self.assertDocument(
             '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}, {"@f": "name"}]}]}',
             "{ id name }"
@@ -84,26 +92,26 @@ class DocumentParserTest(ParsingTest):
         self.assertDocumentError(1, "query {id} {id}")
         self.assertDocumentError(1, "{id} query {id}")
 
-    def test_query(self):
+    def test_query(self) -> None:
         self.assertDocument(
             '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "query { id }"
         )
 
-    def test_mutation(self):
+    def test_mutation(self) -> None:
         self.assertDocument(
             '{"@doc": null, "operations": [{"@m": null, "selections": [{"@f": "id"}]}]}',
             "mutation { id }"
         )
 
-    def test_fragment(self):
+    def test_fragment(self) -> None:
         self.assertDocument(
             '{"@doc": null, '
             '"fragments": [{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}]}',
             "fragment foo on Bar { id }"
         )
 
-    def test_parse_many(self):
+    def test_parse_many(self) -> None:
         self.assertDocument(
             '{"@doc": null, "fragments": ['
             '{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}, '
@@ -131,7 +139,7 @@ class DocumentParserTest(ParsingTest):
             "query {id} fragment foo1 on Bar {id}"
         )
 
-    def test_whitespaces(self):
+    def test_whitespaces(self) -> None:
         self.assertDocument(
             '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             ",,query,,{,,,id,},"
@@ -153,27 +161,27 @@ class DocumentParserTest(ParsingTest):
             "\t\tquery\t\t{\t\t\tid\t}\t\t\t"
         )
 
-    def test_comments(self):
+    def test_comments(self) -> None:
         self.assertDocument(
             '{"@doc": null, "operations": [{"@q": null, "selections": [{"@f": "id"}]}]}',
             "# comment\n  #\nquery{id} # comment\n# query {foo}\n#\n# comment"
         )
 
-    def test_failures(self):
+    def test_failures(self) -> None:
         self.assertDocumentError(1, "sfs")
         self.assertDocumentError(1, "query{id} fds")
         self.assertDocumentError(1, "a query{id}")
 
 
 class QueryOperationParserTest(ParsingTest):
-    def init_parser(self):
-        self.operations = []
+    def init_parser(self) -> ElementParser:
+        self.operations: t.List[qm.Operation] = []
         return OperationParser("query", self.operations)
 
-    def get_result(self):
+    def get_result(self) -> qm.GraphQlModelType:
         return self.operations[0]
 
-    def test_operation_type(self):
+    def test_operation_type(self) -> None:
         self.assertParserResult(
             '{"@q": null, "selections": [{"@f": "foo"}]}',
             "query {foo}"
@@ -181,7 +189,7 @@ class QueryOperationParserTest(ParsingTest):
 
         self.assertParserError(1, "mutation {foo}")
 
-    def test_optionals(self):
+    def test_optionals(self) -> None:
         self.assertParserResult(
             '{"@q": null, "selections": [{"@f": "foo"}]}',
             "query {foo}"
@@ -221,19 +229,19 @@ class QueryOperationParserTest(ParsingTest):
         self.assertParserError(1, "query ($id: Bar) foo {abc}")
         self.assertParserError(1, "query @bar ($id: Bar) {abc}")
 
-    def test_selections_required(self):
+    def test_selections_required(self) -> None:
         self.assertDocumentError(
             1,
             """ query """
         )
 
-    def test_no_empty_selections(self):
+    def test_no_empty_selections(self) -> None:
         self.assertDocumentError(
             1,
             """ query {}"""
         )
 
-    def test_no_variables(self):
+    def test_no_variables(self) -> None:
         self.assertDocumentError(
             1,
             """ query () {foo}"""
@@ -241,14 +249,14 @@ class QueryOperationParserTest(ParsingTest):
 
 
 class MutationOperationParserTest(ParsingTest):
-    def init_parser(self):
-        self.operations = []
+    def init_parser(self) -> ElementParser:
+        self.operations: t.List[qm.Operation] = []
         return OperationParser("mutation", self.operations)
 
-    def get_result(self):
+    def get_result(self) -> qm.GraphQlModelType:
         return self.operations[0]
 
-    def test_parse(self):
+    def test_parse(self) -> None:
         self.assertParserResult(
             '{"@m": null, "selections": [{"@f": "foo"}]}',
             "mutation {foo}"
@@ -257,14 +265,14 @@ class MutationOperationParserTest(ParsingTest):
 
 
 class VariablesParserTest(ParsingTest):
-    def init_parser(self):
-        self.variables = []
+    def init_parser(self) -> ElementParser:
+        self.variables: t.List[qm.VariableDefinition] = []
         return VariablesParser(self.variables)
 
-    def get_result(self):
+    def get_result(self) -> t.Sequence[qm.GraphQlModelType]:
         return self.variables
 
-    def test_parse(self):
+    def test_parse(self) -> None:
         self.assertParserResults(
             "($foo: Bar)",
             '["foo", {"@named": "Bar"}, null]'
@@ -317,10 +325,10 @@ class VariablesParserTest(ParsingTest):
             '["g", {"@named": "ggg"}, null]'
         )
 
-    def test_const(self):
+    def test_const(self) -> None:
         self.assertParserError(1, "$foo: Bar = $var")
 
-    def test_error(self):
+    def test_error(self) -> None:
         self.assertParserError(1, "()")
         self.assertParserError(1, "(foo: Bar)")
         self.assertParserError(1, "($foo Bar)")
@@ -328,14 +336,14 @@ class VariablesParserTest(ParsingTest):
 
 
 class DirectivesParserTest(ParsingTest):
-    def init_parser(self):
-        self.directives = []
+    def init_parser(self) -> ElementParser:
+        self.directives: t.List[qm.Directive] = []
         return DirectivesParser(self.directives)
 
-    def get_result(self):
+    def get_result(self) -> t.Sequence[qm.GraphQlModelType]:
         return self.directives
 
-    def test_parse(self):
+    def test_parse(self) -> None:
         self.assertParserResults(
             ""
         )
@@ -365,21 +373,21 @@ class DirectivesParserTest(ParsingTest):
             '{"@dir": "abc", "arguments": [["foo", {"@float": 2.5}], ["abc", {"@null": null}]]}'
         )
 
-    def test_fails(self):
+    def test_fails(self) -> None:
         self.assertParserError(1, "@foo ()")
         self.assertParserError(1, "foo")
         self.assertParserError(1, "@foo bar")
 
 
 class ArgumentsParserTest(ParsingTest):
-    def init_parser(self):
-        self.arguments = []
+    def init_parser(self) -> ElementParser:
+        self.arguments: t.List[qm.Argument] = []
         return ArgumentsParser(self.arguments)
 
-    def get_result(self):
+    def get_result(self) -> t.Sequence[qm.GraphQlModelType]:
         return self.arguments
 
-    def test_success(self):
+    def test_success(self) -> None:
         self.assertParserResults(
             "(id: 3)",
             '["id", {"@int": 3}]'
@@ -391,7 +399,7 @@ class ArgumentsParserTest(ParsingTest):
             '["name", {"@enum": "foo"}]',
         )
 
-    def test_fail(self):
+    def test_fail(self) -> None:
         self.assertParserError(1, "()")
         self.assertParserError(1, "(id 3)")
         self.assertParserError(1, "(id:: 3)")
@@ -399,14 +407,14 @@ class ArgumentsParserTest(ParsingTest):
 
 
 class SelectionsParserTest(ParsingTest):
-    def init_parser(self):
-        self.selections = []
+    def init_parser(self) -> ElementParser:
+        self.selections: t.List[qm.Selection] = []
         return SelectionsParser(self.selections)
 
-    def get_result(self):
+    def get_result(self) -> t.Sequence[qm.GraphQlModelType]:
         return self.selections
 
-    def test_success(self):
+    def test_success(self) -> None:
         self.assertParserResults(
             "{ id }",
             '{"@f": "id"}'
@@ -443,7 +451,7 @@ class SelectionsParserTest(ParsingTest):
             '{"@f": "id", "alias": "id2"}',
         )
 
-    def test_errors(self):
+    def test_errors(self) -> None:
         self.assertParserError(1, "{}")
         self.assertParserError(1, "{ 3 }")
         self.assertParserError(1, "{ .. on Foo {name} }")
@@ -451,14 +459,14 @@ class SelectionsParserTest(ParsingTest):
 
 
 class FieldParserTest(ParsingTest):
-    def init_parser(self):
-        self.fields = []
+    def init_parser(self) -> ElementParser:
+        self.fields: t.List[qm.Selection] = []
         return FieldParser(self.fields)
 
-    def get_result(self):
+    def get_result(self) -> qm.GraphQlModelType:
         return self.fields[0]
 
-    def test_parse(self):
+    def test_parse(self) -> None:
         self.assertParserResult(
             '{"@f": "foo"}',
             "foo"
@@ -534,7 +542,7 @@ class FieldParserTest(ParsingTest):
             "bar:foo"
         )
 
-    def test_errors(self):
+    def test_errors(self) -> None:
         self.assertParserError(1, "bar!foo")
         self.assertParserError(1, "bar:foo@bar(id: 3)(id: 3){abc}")
         self.assertParserError(1, "bar:foo{abc}(id: 3)@bar")
@@ -543,18 +551,20 @@ class FieldParserTest(ParsingTest):
 
 
 class ValueParserTest(ParsingTest):
-    def init_parser(self):
-        self.value = None
+    def init_parser(self) -> ElementParser:
+        self.value: t.Optional[qm.Value] = None
 
-        def set_value(v):
+        def set_value(v: qm.Value) -> None:
             self.value = v
 
         return ValueParser(set_value)
 
-    def get_result(self):
+    def get_result(self) -> qm.GraphQlModelType:
+        if self.value is None:
+            raise RuntimeError("value expected")
         return self.value
 
-    def test_int(self):
+    def test_int(self) -> None:
         self.assertParserResult('{"@int": 0}', "0")
         self.assertParserResult('{"@int": 0}', "-0")
         self.assertParserResult('{"@int": 3}', "3")
@@ -563,7 +573,7 @@ class ValueParserTest(ParsingTest):
         self.assertParserResult('{"@int": -1234567890}', "-1234567890")
         self.assertParserError(1, '01')
 
-    def test_float(self):
+    def test_float(self) -> None:
         self.assertParserResult('{"@float": 0.0}', "0.0")
         self.assertParserResult('{"@float": -0.0}', "-0.0")
         self.assertParserResult('{"@float": 0.0123456789}', "0.0123456789")
@@ -589,20 +599,20 @@ class ValueParserTest(ParsingTest):
 
         self.assertParserError(1, "1.")
 
-    def test_simple(self):
+    def test_simple(self) -> None:
         self.assertParserResult('{"@bool": true}', "true")
         self.assertParserResult('{"@bool": false}', "false")
         self.assertParserResult('{"@null": null}', "null")
         self.assertParserResult('{"@enum": "foo"}', "foo")
         self.assertParserResult('{"@var": "foo"}', "$foo")
 
-    def test_variable(self):
+    def test_variable(self) -> None:
         self.assertParserResult('{"@obj": {"a": {"@list": [{"@obj": {"b": {"@var": "v"}}}]}}}', "{a: [{b: $v}]}")
         self.assertParserResult('{"@list": [{"@obj": {"foo": {"@list": [{"@var": "v"}]}}}]}', "[{foo: [$v]}]")
         self.assertParserResult('{"@list": [{"@list": [{"@list": [{"@var": "v"}]}]}]}', "[[[$v]]]")
         self.assertParserResult('{"@obj": {"a": {"@obj": {"b": {"@obj": {"c": {"@var": "v"}}}}}}}', "{a: {b: {c: $v}}}")
 
-    def test_list(self):
+    def test_list(self) -> None:
         self.assertParserResult('{"@list": []}', "[]")
         self.assertParserResult('{"@list": [{"@int": 1}]}', "[1]")
         self.assertParserResult('{"@list": [{"@int": 1}, {"@int": 2}]}', "[1 2]")
@@ -610,13 +620,13 @@ class ValueParserTest(ParsingTest):
         self.assertParserResult('{"@list": [{"@obj": {"foo": {"@int": 1}}}, {"@int": 1}]}', "[{foo: 1} 1]")
         self.assertParserResult('{"@list": [{"@obj": {"foo": {"@var": "v"}}}, {"@var": "r"}]}', "[{foo: $v} $r]")
 
-    def test_obj(self):
+    def test_obj(self) -> None:
         self.assertParserResult('{"@obj": {}}', "{}")
         self.assertParserResult('{"@obj": {"x": {"@int": 1}}}', "{x: 1}")
         self.assertParserResult('{"@obj": {"x": {"@list": [{"@int": 1}]}, "y": {"@int": 2}}}', "{x: [1] y: 2}")
         self.assertParserResult('{"@obj": {"x": {"@list": [{"@var": "v"}]}, "y": {"@var": "r"}}}', "{x: [$v] y: $r}")
 
-    def test_str(self):
+    def test_str(self) -> None:
         self.assertParserResult('{"@str": ""}', '""')
         self.assertParserResult('{"@str": "foo"}', '"foo"')
         self.assertParserResult(r'{"@str": "\u20ac\"\\/\b\f\n\r\t\u20ac"}', r'"\u20ac\"\\\/\b\f\n\r\t\u20AC"')
@@ -628,18 +638,20 @@ class ValueParserTest(ParsingTest):
 
 
 class ConstValueParserTest(ParsingTest):
-    def init_parser(self):
-        self.value = None
+    def init_parser(self) -> ElementParser:
+        self.value: t.Optional[qm.ConstValue] = None
 
-        def set_value(v):
+        def set_value(v: qm.ConstValue) -> None:
             self.value = v
 
         return ConstValueParser(set_value)
 
-    def get_result(self):
+    def get_result(self) -> qm.ConstValue:
+        if self.value is None:
+            raise RuntimeError("value expected")
         return self.value
 
-    def test_success(self):
+    def test_success(self) -> None:
         self.assertParserResult('{"@int": 0}', "0")
         self.assertParserResult('{"@float": 0.0}', "0.0")
         self.assertParserResult('{"@bool": true}', "true")
@@ -652,7 +664,7 @@ class ConstValueParserTest(ParsingTest):
         self.assertParserResult('{"@const-obj": {"x": {"@int": 1}}}', "{x: 1}")
         self.assertParserResult('{"@str": ""}', '""')
 
-    def test_errors(self):
+    def test_errors(self) -> None:
         self.assertParserError(1, "$v")
         self.assertParserError(1, "[$v]")
         self.assertParserError(1, "[{foo: $v}]")
@@ -666,14 +678,14 @@ class ConstValueParserTest(ParsingTest):
 
 
 class FragmentSpreadParserTest(ParsingTest):
-    def init_parser(self):
-        self.fields = []
+    def init_parser(self) -> ElementParser:
+        self.fields: t.List[qm.Selection] = []
         return FragmentSpreadParser(self.fields)
 
-    def get_result(self):
+    def get_result(self) -> qm.GraphQlModelType:
         return self.fields[0]
 
-    def test_success(self):
+    def test_success(self) -> None:
         self.assertParserResult('{"@frg-spread": "foo"}', "... foo")
         self.assertParserResult('{"@frg-spread": "foo", "directives": [{"@dir": "bar"}]}', "... foo @bar")
         self.assertParserResult(
@@ -681,21 +693,21 @@ class FragmentSpreadParserTest(ParsingTest):
             "... foo @bar @abc"
         )
 
-    def test_error(self):
+    def test_error(self) -> None:
         self.assertParserError(1, "... ")
         self.assertParserError(1, "... foo()")
         self.assertParserError(1, "... foo bar")
 
 
 class InlineFragmentParserTest(ParsingTest):
-    def init_parser(self):
-        self.fields = []
+    def init_parser(self) -> ElementParser:
+        self.fields: t.List[qm.Selection] = []
         return InlineFragmentParser(self.fields)
 
-    def get_result(self):
+    def get_result(self) -> qm.GraphQlModelType:
         return self.fields[0]
 
-    def test_success(self):
+    def test_success(self) -> None:
         self.assertParserResult('{"@frg-inline": null, "selections": [{"@f": "foo"}]}', "... {foo}")
         self.assertParserResult(
             '{"@frg-inline": null, "on_type": {"@named": "Bar"}, "selections": [{"@f": "foo"}]}',
@@ -710,7 +722,7 @@ class InlineFragmentParserTest(ParsingTest):
             "... on Bar @abc {foo}"
         )
 
-    def test_errors(self):
+    def test_errors(self) -> None:
         self.assertParserError(1, "... on Bar")
         self.assertParserError(1, "... @abc on Bar {foo}")
         self.assertParserError(1, ".. on Bar {foo}")
@@ -718,14 +730,14 @@ class InlineFragmentParserTest(ParsingTest):
 
 
 class FragmentParserTest(ParsingTest):
-    def init_parser(self):
-        self.fragments = []
+    def init_parser(self) -> ElementParser:
+        self.fragments: t.List[qm.Fragment] = []
         return FragmentParser(self.fragments)
 
-    def get_result(self):
+    def get_result(self) -> qm.GraphQlModelType:
         return self.fragments[0]
 
-    def test_success(self):
+    def test_success(self) -> None:
         self.assertParserResult(
             '{"@frg": "foo", "on_type": {"@named": "Foo"}, "selections": [{"@f": "bar"}]}',
             "fragment foo on Foo {bar}"
@@ -736,7 +748,7 @@ class FragmentParserTest(ParsingTest):
             "fragment foo on Foo @d {bar}"
         )
 
-    def test_errors(self):
+    def test_errors(self) -> None:
         self.assertParserError(1, "fragment on Foo {bar}")
         self.assertParserError(1, "fragment foo Foo {bar}")
         self.assertParserError(1, "fragment foo on {bar}")

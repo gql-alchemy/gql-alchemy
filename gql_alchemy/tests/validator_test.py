@@ -17,7 +17,7 @@ logger.addHandler(sh)
 class ValidatorTest(unittest.TestCase):
     def assertValidationError(self, query: str, schema: s.Schema,
                               error_message: str,
-                              variables: t.Optional[t.Mapping[str, PrimitiveType]] = None):
+                              variables: t.Optional[t.Mapping[str, PrimitiveType]] = None) -> None:
         with self.assertRaises(GqlValidationError) as cm:
             validate(
                 parse_document(query),
@@ -29,7 +29,7 @@ class ValidatorTest(unittest.TestCase):
 
     @staticmethod
     def assertNoErrors(query: str, schema: s.Schema,
-                       variables: t.Optional[t.Mapping[str, PrimitiveType]] = None):
+                       variables: t.Optional[t.Mapping[str, PrimitiveType]] = None) -> None:
         validate(
             parse_document(query),
             schema,
@@ -38,7 +38,7 @@ class ValidatorTest(unittest.TestCase):
 
 
 class FieldsTest(ValidatorTest):
-    def test_fields_exists(self):
+    def test_fields_exists(self) -> None:
         validate(
             parse_document("{ foo }"),
             s.Schema({}, s.Object({"foo": s.Int()})),
@@ -50,7 +50,7 @@ class FieldsTest(ValidatorTest):
             "Selecting undefined field `foo` from @query type"
         )
 
-    def test_subfield_exists(self):
+    def test_subfield_exists(self) -> None:
         validate(
             parse_document("{ foo { bar } }"),
             s.Schema(
@@ -76,7 +76,7 @@ class FieldsTest(ValidatorTest):
             "Selecting undefined field `bar` from Foo type"
         )
 
-    def test_selectable_field_must_queries_with_selections(self):
+    def test_selectable_field_must_queries_with_selections(self) -> None:
         validate(
             parse_document("{ foo { bar } }"),
             s.Schema(
@@ -103,7 +103,7 @@ class FieldsTest(ValidatorTest):
             "Spreadable type (interface, class, union) must be selected with fields"
         )
 
-    def test_select_field_of_wrapped_type(self):
+    def test_select_field_of_wrapped_type(self) -> None:
         validate(
             parse_document("{ foo { bar } }"),
             s.Schema(
@@ -131,7 +131,7 @@ class FieldsTest(ValidatorTest):
             "Selecting undefined field `bar` from Foo type"
         )
 
-    def test_select_fields_of_plain_type(self):
+    def test_select_fields_of_plain_type(self) -> None:
         schema = s.Schema(
             {
                 "Foo": s.Object({
@@ -151,7 +151,7 @@ class FieldsTest(ValidatorTest):
             "Selecting fields for type without fields"
         )
 
-    def test_required_arguments(self):
+    def test_required_arguments(self) -> None:
         schema = s.Schema(
             {
                 "Foo": s.Object({
