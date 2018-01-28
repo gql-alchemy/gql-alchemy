@@ -19,6 +19,10 @@ class GqlParsingError(GqlError):
         return '\n'.join(itertools.chain([self.msg], format_position(self.lineno, self.line_pos, self.lines)))
 
 
+class GqlValidationError(GqlError):
+    pass
+
+
 class GqlSchemaError(GqlError):
     """Errors in schema definition"""
     pass

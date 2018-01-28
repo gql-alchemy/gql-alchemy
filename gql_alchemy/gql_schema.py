@@ -90,6 +90,10 @@ class GqlPlainType(GqlInputType, GqlOutputType):
 class GqlScalarType(GqlPlainType):
     """Int, Float, Str, Bool and ID"""
 
+    def __init__(self, description: t.Optional[str] = None) -> None:
+        super().__init__(description)
+        self.name = type(self).__name__
+
     def pretty_str(self) -> str:
         if self.name is None:
             raise RuntimeError("Name is not filled in")
@@ -111,7 +115,22 @@ class GqlSpreadableType(GqlOutputType):
 
 class GqlSelectableType(GqlSpreadableType):
     """Object, Interface"""
-    pass
+    fields: t.Mapping[str, 'Field']
+
+    def field_type(self, name: str) -> GqlType:
+        if name not in self.fields:
+            raise RuntimeError("Field not found")
+
+        field = self.fields[name]
+        field_type = field.type
+
+        if isinstance(field_type, Ref):
+            if field_type.ref_type is None:
+                raise RuntimeError("Unexpected unresolved ref")
+
+            return field_type.ref_type
+
+        return field_type
 
 
 class Ref:
@@ -457,7 +476,7 @@ class InputObject(GqlInputType):
                 format_description(2, f.description)
 
             f_str = "  " + n + ": " + f.type.pretty_short_str()
-            if f.default_value != None:
+            if f.default_value is not None:
                 f_str += " = " + json.dumps(f.default_value)
 
             lines.append(f_str)
@@ -486,7 +505,7 @@ class Directive:
                  description: t.Optional[str] = None) -> None:
         self.locations = locations
 
-        norm_args: t.Dict[str, InputValue] = None
+        norm_args: t.Optional[t.Dict[str, InputValue]] = None
         if args is not None:
             norm_args = {}
             for name, arg in args:
@@ -497,13 +516,13 @@ class Directive:
                 else:
                     norm_args[name] = InputValue(arg)
 
-        self.args: t.Mapping[str, InputValue] = norm_args
+        self.args: t.Optional[t.Mapping[str, InputValue]] = norm_args
 
         self.description = description
 
         self.name: t.Optional[str] = None
 
-    def pretty_str(self):
+    def pretty_str(self) -> str:
         if self.name is None:
             raise RuntimeError("Name not filled in")
 
@@ -529,15 +548,15 @@ class Directive:
 
 class Schema:
     def __init__(self,
-                 types: t.Mapping[str, t.Union[GqlWrappedType, Object, Interface, Union, InputObject]],
+                 types: t.Mapping[str, t.Union[GqlWrappedType, Enum, Object, Interface, Union, InputObject]],
                  query: Object,
                  mutation: t.Optional[Object] = None,
                  directives: t.Optional[t.Mapping[str, Directive]] = None) -> None:
 
-        for name, t in types.items():
+        for name, type in types.items():
             if NAME_RE.match(name) is None:
                 raise GqlSchemaError("Wrong type name, /{}/ required, got {}".format(NAME_RE.pattern, name))
-            t.name = name
+            type.name = name
 
         if directives is not None:
             for name, d in directives.items():
@@ -573,6 +592,13 @@ class Schema:
 
         return "\n".join(lines)
 
+    def resolve_type(self, type_name: str) -> t.Optional[GqlType]:
+        if type_name in standardSchema.types:
+            return standardSchema.types[type_name]
+        if type_name in self.types:
+            return self.types[type_name]
+        return None
+
     def __resolve_all_refs(self) -> None:
         for name, type in self.types.items():
             try:
@@ -580,20 +606,10 @@ class Schema:
                     self.__resolve_ref(type)
 
                 if isinstance(type, Object):
-                    for ref in type.interfaces:
-                        self.__resolve_ref(ref)
-                        if not isinstance(ref.ref_type, Interface):
-                            raise GqlSchemaError(
-                                "Can extend interfaces only, {} is not interface".format(ref.type_name)
-                            )
+                    self.__resolve_refs_on_object(type)
 
-                if isinstance(type, Object) or isinstance(type, Interface):
-                    for f in type.fields.values():
-                        self.__resolve_ref(f.type)
-
-                        if f.args is not None:
-                            for a in f.args.values():
-                                self.__resolve_ref(a.type)
+                if isinstance(type, Interface):
+                    self.__resolve_refs_for_fields(type.fields)
 
                 if isinstance(type, Union):
                     for ref in type.possible_types:
@@ -608,6 +624,29 @@ class Schema:
                         self.__resolve_ref(inf.type)
             except GqlSchemaError as e:
                 raise GqlSchemaError("Error resolving ref for {} type".format(name)) from e
+
+        self.__resolve_refs_on_object(self.query)
+
+        if self.mutation is not None:
+            self.__resolve_refs_on_object(self.mutation)
+
+    def __resolve_refs_on_object(self, obj: Object) -> None:
+        for ref in obj.interfaces:
+            self.__resolve_ref(ref)
+            if not isinstance(ref.ref_type, Interface):
+                raise GqlSchemaError(
+                    "Can extend interfaces only, {} is not interface".format(ref.type_name)
+                )
+
+        self.__resolve_refs_for_fields(obj.fields)
+
+    def __resolve_refs_for_fields(self, fields: t.Mapping[str, Field]) -> None:
+        for f in fields.values():
+            self.__resolve_ref(f.type)
+
+            if f.args is not None:
+                for a in f.args.values():
+                    self.__resolve_ref(a.type)
 
     def __resolve_ref(self, type: t.Union[GqlScalarType, GqlWrappedType, Ref]) -> None:
         if isinstance(type, Ref):
@@ -649,3 +688,94 @@ class Schema:
             return self.__resolve_type(type.ref_type)
 
         return type
+
+
+standardSchema = Schema({
+    "__Schema": Object({
+        "types": NonNull(List(NonNull("__Type"))),
+        "queryType": NonNull("__Type"),
+        "mutationType": "__Type",
+        "directives": NonNull(List(NonNull("__Directive")))
+    }),
+
+    "__Type": Object({
+        "kind": NonNull("__TypeKind"),
+        "name": String(),
+        "description": String(),
+        "fields": Field(
+            List(NonNull("__Field")),
+            {"includeDeprecated": InputValue(Boolean(), False)}
+        ),
+        "interfaces": List(NonNull("__Type")),
+        "possibleTypes": List(NonNull("__Type")),
+        "enumValues": Field(
+            List(NonNull("__EnumValue")),
+            {"includeDeprecated": InputValue(Boolean(), False)}
+        ),
+        "inputFields": List(NonNull("__InputValue")),
+        "ofType": "__Type"
+    }),
+
+    "__Field": Object({
+        "name": NonNull(String()),
+        "description": String(),
+        "args": NonNull(List(NonNull("__InputValue"))),
+        "type": NonNull("__Type"),
+        "isDepricated": NonNull(Boolean()),
+        "depricationReason": String()
+    }),
+
+    "__InputValue": Object({
+        "name": NonNull(String()),
+        "description": String(),
+        "type": NonNull("__Type"),
+        "defaultValue": String()
+    }),
+
+    "__EnumValue": Object({
+        "name": NonNull(String()),
+        "description": String(),
+        "isDepricated": NonNull(Boolean()),
+        "depricationReason": String()
+    }),
+
+    "__TypeKind": Enum([
+        "SCALAR",
+        "OBJECT",
+        "INTERFACE",
+        "UNION",
+        "ENUM",
+        "INPUT_OBJECT",
+        "LIST",
+        "NON_NULL"
+    ]),
+
+    "__Directive": Object({
+        "name": NonNull(String()),
+        "description": String(),
+        "locations": NonNull(List(NonNull("__DirectiveLocation"))),
+        "args": NonNull(List(NonNull("__InputValue")))
+    }),
+
+    "__DirectiveLocation": Enum([
+        "QUERY",
+        "MUTATION",
+        "FIELD",
+        "FRAGMENT_DEFINITION",
+        "FRAGMENT_SPREAD",
+        "INLINE_FRAGMENT"
+    ])
+},
+    Object({
+        "__schema": NonNull("__Schema"),
+        "__type": Field("__Type", {"name": NonNull(String())})
+    })
+)
+
+standardTypes = t.cast(t.MutableMapping[str, GqlType], standardSchema.types)
+
+standardTypes["Boolean"] = Boolean()
+standardTypes["Int"] = Int()
+standardTypes["Float"] = Float()
+standardTypes["String"] = String()
+standardTypes["ID"] = ID()
