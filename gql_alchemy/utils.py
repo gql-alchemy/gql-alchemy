@@ -5,7 +5,7 @@ PrimitiveType = t.Union[None, bool, int, float, str, t.Sequence['PrimitiveType']
 
 class PrimitiveSerializable:
     def to_primitive(self) -> PrimitiveType:
-        pass
+        raise NotImplementedError()
 
 
 def add_if_not_empty(mapping: t.MutableMapping[str, PrimitiveType],
