@@ -601,9 +601,22 @@ def assert_inline(type_to_test: GqlType) -> t.Union['ScalarType', 'WrapperType']
     return inline
 
 
+DirectiveLocation = t.NewType("DirectiveLocation", str)
+
+
+class DirectiveLocations:
+    QUERY = DirectiveLocation("QUERY")
+    MUTATION = DirectiveLocation("MUTATION")
+    FIELD = DirectiveLocation("FIELD")
+    FRAGMENT_DEFINITION = DirectiveLocation("FRAGMENT_DEFINITION")
+    FRAGMENT_SPREAD = DirectiveLocation("FRAGMENT_SPREAD")
+    INLINE_FRAGMENT = DirectiveLocation("INLINE_FRAGMENT")
+
+
 class Directive:
-    def __init__(self, name: str, args: t.Mapping[str, Argument]) -> None:
+    def __init__(self, name: str, locations: t.Set[DirectiveLocation], args: t.Mapping[str, Argument]) -> None:
         self.__name = name
+        self.locations = locations
         self.args = args
 
     def __str__(self) -> str:

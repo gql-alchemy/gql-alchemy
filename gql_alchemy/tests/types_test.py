@@ -14,7 +14,7 @@ class TypesTest(unittest.TestCase):
                 gt.Object("TestObject2", {"bar": gt.Field(gt.Int, {})}, set()),
                 gt.InputObject("TestInputObject", {"foo": gt.Float})
             ],
-            [gt.Directive("TestDirective", {})]
+            [gt.Directive("TestDirective", {gt.DirectiveLocations.MUTATION}, {})]
         )
 
 
@@ -606,7 +606,7 @@ class TypeClassificationTest(TypesTest):
 
 class DirectiveTest(TypesTest):
     def test_name(self):
-        self.assertEqual("@foo", str(gt.Directive("foo", {})))
+        self.assertEqual("@foo", str(gt.Directive("foo", {gt.DirectiveLocations.MUTATION}, {})))
 
 
 class TypeRegistryTest(TypesTest):
@@ -761,7 +761,7 @@ class TypeRegistryTest(TypesTest):
         self.assertValidationError(
             "Wrong name of directive: /[_A-Za-z][_0-9A-Za-z]*/ expected, but got '!foo'", [],
             [
-                gt.Directive("!foo", {})
+                gt.Directive("!foo", {gt.DirectiveLocations.MUTATION}, {})
             ]
         )
 
@@ -831,14 +831,14 @@ class TypeRegistryTest(TypesTest):
     def test_directive_args(self):
         gt.TypeRegistry(
             [], [
-                gt.Directive("foo", {"foo": gt.Argument(gt.Int, 1)})
+                gt.Directive("foo", {gt.DirectiveLocations.MUTATION}, {"foo": gt.Argument(gt.Int, 1)})
             ]
         )
 
         self.assertValidationError(
             "Can not resolve `Foo` type; problem with `foo` argument of `foo` directive", [],
             [
-                gt.Directive("foo", {"foo": gt.Argument("Foo", None)})
+                gt.Directive("foo", {gt.DirectiveLocations.MUTATION}, {"foo": gt.Argument("Foo", None)})
             ]
         )
 
@@ -848,13 +848,13 @@ class TypeRegistryTest(TypesTest):
                 gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())
             ],
             [
-                gt.Directive("foo", {"foo": gt.Argument("Foo", None)})
+                gt.Directive("foo", {gt.DirectiveLocations.MUTATION}, {"foo": gt.Argument("Foo", None)})
             ]
         )
 
         self.assertValidationError(
             "\"1\" is not assignable to `Int` type; problem with `foo` argument of `foo` directive", [],
             [
-                gt.Directive("foo", {"foo": gt.Argument(gt.Int, "1")})
+                gt.Directive("foo", {gt.DirectiveLocations.MUTATION}, {"foo": gt.Argument(gt.Int, "1")})
             ]
         )
