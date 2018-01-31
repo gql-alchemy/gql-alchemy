@@ -765,6 +765,13 @@ class TypeRegistryTest(TypesTest):
             ]
         )
 
+        self.assertValidationError(
+            "Type re-definition; problem with `Foo` type", [
+                gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})}),
+                gt.InputObject("Foo", {"foo": gt.Int})
+            ]
+        )
+
     def test_input_output_types(self):
         self.assertValidationError(
             "Output type expected here; problem with `foo` field of `Foo` type", [

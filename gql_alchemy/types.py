@@ -715,7 +715,12 @@ class TypeRegistry:
                 "INLINE_FRAGMENT"
             })
         ))
-        self.__types_by_names = dict(((str(gql_type), gql_type) for gql_type in self.__types))
+        self.__types_by_names: t.Dict[str, GqlType] = {}
+
+        for type_def in self.__types:
+            if str(type_def) in self.__types_by_names:
+                raise GqlSchemaError("Type re-definition; problem with `{}` type".format(str(type_def)))
+            self.__types_by_names[str(type_def)] = type_def
 
         self.__directives = directives
         self.__directives_by_names = dict(((str(gql_type)[1:], gql_type) for gql_type in self.__types))
