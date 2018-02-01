@@ -15,7 +15,7 @@ class _SchemaAssertionError(RuntimeError):
         return t.cast(str, self.args[0])
 
 
-class _TypeResolvingError(RuntimeError):
+class TypeResolvingError(RuntimeError):
     def __init__(self, name: str) -> None:
         super().__init__("Can not resolve `{}` type".format(name), name)
 
@@ -187,7 +187,10 @@ class Field:
 class _GqlCompositeType(GqlType):
     def __init__(self, name: str, fields: t.Mapping[str, Field]) -> None:
         super().__init__(name)
-        self.fields = fields
+        self._fields = fields
+
+    def fields(self, type_registry: 'TypeRegistry') -> t.Mapping[str, Field]:
+        return self._fields
 
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         raise RuntimeError("Value must never be assigned to any composite type")
@@ -314,7 +317,7 @@ class InputObject(_PossibleInputType):
             for value_name, value_type in self.__fields.items():
                 try:
                     value_type_resolved = type_registry.resolve_type(value_type)
-                except _TypeResolvingError as e:
+                except TypeResolvingError as e:
                     raise _SchemaAssertionError(str(e), value_name) from e
                 value_type_wrapper = is_wrapper(value_type_resolved)
                 if value_type_wrapper is not None:
@@ -379,6 +382,18 @@ class Object(_GqlCompositeType):
 
         self.__implements = implements
         self.__implements_resolved: t.Optional[t.Sequence[Interface]] = None
+
+    def fields(self, type_registry: 'TypeRegistry') -> t.Mapping[str, Field]:
+        fields: t.Dict[str, Field] = {}
+        for i in self.implements(type_registry):
+            for n, f in i.fields(type_registry).items():
+                fields[n] = f
+        for n, f in self._fields.items():
+            fields[n] = f
+        return fields
+
+    def own_fields(self) -> t.Mapping[str, Field]:
+        return self._fields
 
     def implements(self, type_registry: 'TypeRegistry') -> t.Sequence[Interface]:
         if self.__implements_resolved is None:
@@ -742,7 +757,7 @@ class TypeRegistry:
         if isinstance(type_or_ref, GqlType):
             return type_or_ref
         if type_or_ref not in self.__types_by_names:
-            raise _TypeResolvingError(type_or_ref)
+            raise TypeResolvingError(type_or_ref)
         return self.__types_by_names[type_or_ref]
 
     def resolve_and_unwrap(self, type_or_ref: t.Union[GqlType, str]) -> NonWrapperType:
@@ -773,7 +788,7 @@ class TypeRegistry:
             if isinstance(user_type, Union):
                 try:
                     user_type.of_objects(self)
-                except _TypeResolvingError as e:
+                except TypeResolvingError as e:
                     raise GqlSchemaError(
                         "{}; problem with `{}` union".format(str(e), str(user_type))
                     ) from e
@@ -812,7 +827,7 @@ class TypeRegistry:
                 )
 
     def __validate_fields(self, selectable_type: SelectableType) -> None:
-        for field_name, field in selectable_type.fields.items():
+        for field_name, field in selectable_type.fields(self).items():
             if self.__NAME_RE.match(str(field_name)) is None:
                 raise GqlSchemaError(
                     "Wrong name of field: /{}/ expected, but got '{}' in `{}` type".format(
@@ -822,7 +837,7 @@ class TypeRegistry:
 
             try:
                 field.type(self)
-            except _TypeResolvingError as e:
+            except TypeResolvingError as e:
                 raise GqlSchemaError(
                     "{}; problem with `{}` field of `{}` type".format(str(e), field_name, str(selectable_type))
                 )
@@ -852,7 +867,7 @@ class TypeRegistry:
 
             try:
                 arg_type = self.resolve_type(arg.type(self))
-            except _TypeResolvingError as e:
+            except TypeResolvingError as e:
                 raise _SchemaAssertionError(str(e), arg_name) from e
             except _SchemaAssertionError as e:
                 raise _SchemaAssertionError("Input type expected", arg_name) from e
@@ -864,7 +879,7 @@ class TypeRegistry:
     def __validate_object(self, obj: Object) -> None:
         try:
             interfaces = list(obj.implements(self))
-        except _TypeResolvingError as e:
+        except TypeResolvingError as e:
             raise GqlSchemaError(
                 "{}; problem with `{}` object".format(str(e), str(obj))
             ) from e
@@ -876,7 +891,7 @@ class TypeRegistry:
         declared_fields: t.Dict[str, str] = {}
         interfaces.sort(key=lambda i: str(i))
         for interface in interfaces:
-            for field_name in interface.fields.keys():
+            for field_name in interface.fields(self).keys():
                 if field_name in declared_fields:
                     raise GqlSchemaError(
                         "Interfaces `{}` and `{}` of `{}` object both declare `{}` field".format(
@@ -884,7 +899,7 @@ class TypeRegistry:
                         )
                     )
                 declared_fields[field_name] = str(interface)
-        for field_name in obj.fields.keys():
+        for field_name in obj.own_fields().keys():
             if field_name in declared_fields:
                 raise GqlSchemaError(
                     "Object `{}` redeclare `{}` field of `{}` interface".format(
