@@ -79,6 +79,9 @@ class Type(GraphQlModelType):
     def __init__(self, null: bool) -> None:
         self.null = null
 
+    def to_primitive(self) -> PrimitiveType:
+        raise NotImplementedError()
+
 
 class NamedType(Type):
     name: str
@@ -133,7 +136,15 @@ Value = Union['Variable', 'IntValue', 'FloatValue', 'StrValue', 'BoolValue', 'Nu
               'ObjectValue']
 
 
-class Variable(GraphQlModelType):
+class ValueModelType(GraphQlModelType):
+    def to_primitive(self) -> PrimitiveType:
+        raise NotImplementedError()
+
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        raise NotImplementedError()
+
+
+class Variable(ValueModelType):
     name: str
 
     def __init__(self, name: str) -> None:
@@ -142,13 +153,19 @@ class Variable(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@var": self.name}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return variables.get(self.name)
 
-class NullValue(GraphQlModelType):
+
+class NullValue(ValueModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@null": None}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return None
 
-class EnumValue(GraphQlModelType):
+
+class EnumValue(ValueModelType):
     value: str
 
     def __init__(self, value: str) -> None:
@@ -157,8 +174,11 @@ class EnumValue(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@enum": self.value}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return self.value
 
-class IntValue(GraphQlModelType):
+
+class IntValue(ValueModelType):
     value: int
 
     def __init__(self, value: int) -> None:
@@ -167,8 +187,11 @@ class IntValue(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@int": self.value}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return self.value
 
-class FloatValue(GraphQlModelType):
+
+class FloatValue(ValueModelType):
     value: float
 
     def __init__(self, value: float) -> None:
@@ -177,8 +200,11 @@ class FloatValue(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@float": self.value}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return self.value
 
-class StrValue(GraphQlModelType):
+
+class StrValue(ValueModelType):
     value: str
 
     def __init__(self, value: str) -> None:
@@ -187,8 +213,11 @@ class StrValue(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@str": self.value}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return self.value
 
-class BoolValue(GraphQlModelType):
+
+class BoolValue(ValueModelType):
     value: bool
 
     def __init__(self, value: bool) -> None:
@@ -197,8 +226,11 @@ class BoolValue(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@bool": self.value}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return self.value
 
-class ConstListValue(GraphQlModelType):
+
+class ConstListValue(ValueModelType):
     values: Sequence[ConstValue]
 
     def __init__(self, values: Sequence[ConstValue]) -> None:
@@ -206,6 +238,9 @@ class ConstListValue(GraphQlModelType):
 
     def to_primitive(self) -> PrimitiveType:
         return {"@const-list": [v.to_primitive() for v in self.values]}
+
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return [value.to_py_value(variables) for value in self.values]
 
 
 class ListValue(GraphQlModelType):
@@ -217,6 +252,9 @@ class ListValue(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@list": [v.to_primitive() for v in self.values]}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return [value.to_py_value(variables) for value in self.values]
+
 
 class ConstObjectValue(GraphQlModelType):
     values: Mapping[str, ConstValue]
@@ -227,6 +265,9 @@ class ConstObjectValue(GraphQlModelType):
     def to_primitive(self) -> PrimitiveType:
         return {"@const-obj": dict(((k, v.to_primitive()) for k, v in self.values.items()))}
 
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return dict(((name, value.to_py_value(variables)) for name, value in self.values.items()))
+
 
 class ObjectValue(GraphQlModelType):
     values: Mapping[str, Value]
@@ -236,6 +277,9 @@ class ObjectValue(GraphQlModelType):
 
     def to_primitive(self) -> PrimitiveType:
         return {"@obj": dict(((k, v.to_primitive()) for k, v in self.values.items()))}
+
+    def to_py_value(self, variables: Mapping[str, PrimitiveType]) -> PrimitiveType:
+        return dict(((name, value.to_py_value(variables)) for name, value in self.values.items()))
 
 
 class Argument(GraphQlModelType):
@@ -272,7 +316,8 @@ class Fragment(GraphQlModelType):
 
 
 class Selection(GraphQlModelType):
-    pass
+    def to_primitive(self) -> PrimitiveType:
+        raise NotImplementedError()
 
 
 class FieldSelection(Selection):
