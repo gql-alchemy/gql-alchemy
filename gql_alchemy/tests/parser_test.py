@@ -46,21 +46,29 @@ class ParsingTest(unittest.TestCase):
             raise RuntimeError("List of results expected")
 
         self.assertEqual(len(expected), len(result))
-        for e, r in zip(expected, result):
-            self.assertEqual(e, json.dumps(r.to_primitive(), sort_keys=True))
+        for expected, actual in zip(expected, result):
+            self.assertEqual(expected, json.dumps(actual.to_primitive(), sort_keys=True))
 
     def assertDocument(self, expected: str, query: str) -> None:
         d = parse_document(query)
         self.assertEqual(expected, json.dumps(d.to_primitive(), sort_keys=True))
 
-    def assertDocumentError(self, lineno: int, query: str) -> None:
+    def assertDocumentError(self, lineno: t.Optional[int], query: str) -> None:
         with self.assertRaises(e.GqlParsingError) as cm:
             parse_document(query)
-        self.assertEqual(lineno, cm.exception.lineno)
+        if lineno is not None:
+            self.assertEqual(lineno, cm.exception.lineno)
+        logger.info(str(cm.exception))
 
 
 class DocumentParserTest(ParsingTest):
     maxDiff = None
+
+    def init_parser(self) -> ElementParser:
+        raise NotImplementedError()
+
+    def get_result(self) -> t.Union[qm.GraphQlModelType, t.Sequence[qm.GraphQlModelType]]:
+        raise NotImplementedError()
 
     def test_shortcut_form(self) -> None:
         self.assertDocument(
@@ -676,7 +684,6 @@ class ConstValueParserTest(ParsingTest):
         self.assertParserError(1, "{a: {b: {c: $v}}}")
 
 
-
 class FragmentSpreadParserTest(ParsingTest):
     def init_parser(self) -> ElementParser:
         self.fields: t.List[qm.Selection] = []
@@ -718,7 +725,8 @@ class InlineFragmentParserTest(ParsingTest):
             "... @abc {foo}"
         )
         self.assertParserResult(
-            '{"@frg-inline": null, "directives": [{"@dir": "abc"}], "on_type": {"@named": "Bar"}, "selections": [{"@f": "foo"}]}',
+            '{"@frg-inline": null, "directives": [{"@dir": "abc"}], "on_type": {"@named": "Bar"}, '
+            '"selections": [{"@f": "foo"}]}',
             "... on Bar @abc {foo}"
         )
 
@@ -757,3 +765,28 @@ class FragmentParserTest(ParsingTest):
         self.assertParserError(1, "fragment foo on Foo")
         self.assertParserError(1, "fragmen foo on Foo {bar}")
         self.assertParserError(1, "fragment on Foo foo {bar}")
+
+
+class ValidationTest(ParsingTest):
+    def init_parser(self) -> ElementParser:
+        raise NotImplementedError()
+
+    def get_result(self) -> t.Union[qm.GraphQlModelType, t.Sequence[qm.GraphQlModelType]]:
+        raise NotImplementedError()
+
+    def test_fragment_validation(self):
+        parse_document("{ ... foo } fragment foo on Foo { bar }")
+        self.assertDocumentError(None, "{ ... foo } fragment bar on Foo { bar }")
+
+    def test_variables_validation(self):
+        parse_document(
+            "query ($foo: Int, $bar: Float){ ... foo bar(a: $bar) } fragment foo on Foo { bar(a: $foo, b: $bar) }"
+        )
+        self.assertDocumentError(
+            None,
+            "query ($foo: Int, $bar: Float){ ... foo bar(a: $bar) } fragment foo on Foo { bar(a: $foo, b: $baz) }"
+        )
+        self.assertDocumentError(
+            None,
+            "query ($foo: Int, $bar: Float){ ... foo bar(a: $baz) } fragment foo on Foo { bar(a: $foo, b: $bar) }"
+        )

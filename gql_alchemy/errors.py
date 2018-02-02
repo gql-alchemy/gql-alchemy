@@ -1,4 +1,4 @@
-import itertools
+import typing as t
 
 from .raw_reader import Reader, format_position
 
@@ -9,14 +9,26 @@ class GqlError(Exception):
 
 class GqlParsingError(GqlError):
     """Errors during query parsing"""
-    def __init__(self, msg: str, reader: Reader) -> None:
+
+    def __init__(self, msg: str, reader: t.Optional[Reader] = None) -> None:
         self.msg = msg
-        self.lineno = reader.lineno
-        self.line_pos = reader.line_pos()
-        self.lines = [reader.prev_line(), reader.current_line(), reader.next_line()]
+
+        self.lineno: t.Optional[int] = None
+        self.line_pos: t.Optional[int] = None
+        self.lines: t.Optional[t.Sequence[t.Optional[str]]] = None
+
+        if reader is not None:
+            self.lineno = reader.lineno
+            self.line_pos = reader.line_pos()
+            self.lines = [reader.prev_line(), reader.current_line(), reader.next_line()]
 
     def __str__(self) -> str:
-        return '\n'.join(itertools.chain([self.msg], format_position(self.lineno, self.line_pos, self.lines)))
+        lines = [self.msg]
+
+        if self.lineno is not None and self.line_pos is not None and self.lines is not None:
+            lines += format_position(self.lineno, self.line_pos, self.lines)
+
+        return '\n'.join(lines)
 
 
 class GqlValidationError(GqlError):

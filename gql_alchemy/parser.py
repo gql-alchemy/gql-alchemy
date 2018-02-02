@@ -30,6 +30,72 @@ def log_position(reader: Reader) -> None:
         logger.debug(line)
 
 
+class CollectFragmentsVariables(qm.QueryVisitor):
+    def __init__(self) -> None:
+        self.fragments_variables: t.Dict[str, t.MutableSet[str]] = {}
+        self.__current_fragment_name: t.Optional[str] = None
+
+    def visit_fragment_begin(self, fragment: qm.Fragment) -> None:
+        self.fragments_variables[fragment.name] = set()
+        self.__current_fragment_name = fragment.name
+
+    def visit_variable(self, var: qm.Variable) -> None:
+        if self.__current_fragment_name is None:
+            return
+
+        self.fragments_variables[self.__current_fragment_name].add(var.name)
+
+
+class VerifyDocument(qm.QueryVisitor):
+    def __init__(self, fragments_variables: t.Mapping[str, t.MutableSet[str]]) -> None:
+        self.__fragments_variables = fragments_variables
+        self.__current_op_name: t.Optional[str] = None
+        self.__in_op = False
+        self.__op_vars: t.MutableSet[str] = set()
+
+    def visit_query_begin(self, query: qm.Query) -> None:
+        self.__visit_operation_begin(query)
+
+    def visit_mutation_begin(self, mutation: qm.Mutation) -> None:
+        self.__visit_operation_begin(mutation)
+
+    def visit_query_end(self, query: qm.Query) -> None:
+        self.__visit_opration_end()
+
+    def visit_mutation_end(self, query: qm.Mutation) -> None:
+        self.__visit_opration_end()
+
+    def visit_variable(self, var: qm.Variable) -> None:
+        if not self.__in_op:
+            return
+        if var.name not in self.__op_vars:
+            raise GqlParsingError("Undefined variable `{}` used in `{}` operation".format(
+                var.name, self.__current_op_name
+            ))
+
+    def visit_fragment_spread_begin(self, spread: qm.FragmentSpread) -> None:
+        if spread.fragment_name not in self.__fragments_variables:
+            raise GqlParsingError("Undefined fragment `{}` used in `{}` operation".format(
+                spread.fragment_name, self.__current_op_name
+            ))
+        fragment_variables = self.__fragments_variables[spread.fragment_name]
+        for var in fragment_variables:
+            if var not in self.__op_vars:
+                raise GqlParsingError("Undefined variable `{}` from `{}` fragment in `{}` operation".format(
+                    var, spread.fragment_name, self.__current_op_name
+                ))
+
+    def __visit_operation_begin(self, op: qm.Operation) -> None:
+        self.__current_op_name = op.name if op.name is not None else "_unnamed_"
+        self.__in_op = True
+        self.__op_vars = {v.name for v in op.variables}
+
+    def __visit_opration_end(self) -> None:
+        self.__current_op_name = None
+        self.__in_op = False
+        self.__op_vars = set()
+
+
 def parse_document(text_input: str) -> qm.Document:
     document: t.List[qm.Document] = []
 
@@ -204,10 +270,18 @@ class DocumentParser(ElementParser):
             return FragmentParser(self.fragments), 0
 
         if ch is None:
-            self.set_document(qm.Document(self.operations, self.fragments))
+            self.__verify_and_set_document(qm.Document(self.operations, self.fragments))
             return None, 1
 
         raise GqlParsingError("One of top-level declaration expected", reader)
+
+    def __verify_and_set_document(self, document: qm.Document) -> None:
+        c = CollectFragmentsVariables()
+        document.visit(c)
+
+        document.visit(VerifyDocument(c.fragments_variables))
+
+        self.set_document(document)
 
     def to_dbg_repr(self) -> PrimitiveType:
         d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
