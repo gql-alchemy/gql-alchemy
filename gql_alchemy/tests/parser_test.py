@@ -46,8 +46,9 @@ class ParsingTest(unittest.TestCase):
             raise RuntimeError("List of results expected")
 
         self.assertEqual(len(expected), len(result))
-        for expected, actual in zip(expected, result):
-            self.assertEqual(expected, json.dumps(actual.to_primitive(), sort_keys=True))
+
+        for expected_item, actual_item in zip(expected, result):
+            self.assertEqual(expected_item, json.dumps(actual_item.to_primitive(), sort_keys=True))
 
     def assertDocument(self, expected: str, query: str) -> None:
         d = parse_document(query)
@@ -789,11 +790,11 @@ class ValidationTest(ParsingTest):
     def get_result(self) -> t.Union[qm.GraphQlModelType, t.Sequence[qm.GraphQlModelType]]:
         raise NotImplementedError()
 
-    def test_fragment_validation(self):
+    def test_fragment_validation(self) -> None:
         parse_document("{ ... foo } fragment foo on Foo { bar }")
         self.assertDocumentError(None, "{ ... foo } fragment bar on Foo { bar }")
 
-    def test_variables_validation(self):
+    def test_variables_validation(self) -> None:
         parse_document(
             "query ($foo: Int, $bar: Float){ ... foo bar(a: $bar) } fragment foo on Foo { bar(a: $foo, b: $bar) }"
         )

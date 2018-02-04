@@ -15,9 +15,9 @@ class ExecutorTest(unittest.TestCase):
         result = e.query(query, variables if variables is not None else {}, op_name)
         self.assertEqual(expected, json.dumps(result, sort_keys=True))
 
-    def test_select_sclar(self):
+    def test_select_scalar(self) -> None:
         class Resolver:
-            def foo(self, args):
+            def foo(self, args: t.Mapping[str, PrimitiveType]) -> int:
                 return 3
 
         self.assertQueryResult(
@@ -32,18 +32,18 @@ class ExecutorTest(unittest.TestCase):
             "{foo}"
         )
 
-    def test_select_with_arguments(self):
+    def test_select_with_arguments(self) -> None:
         class FooResolver:
             type = "Foo"
 
-            def __init__(self, foo: int):
+            def __init__(self, foo: int) -> None:
                 self.__foo = foo
 
-            def bar(self, args):
+            def bar(self, args: t.Mapping[str, PrimitiveType]) -> int:
                 return args["abc"] + self.__foo
 
         class Resolver:
-            def foo(self, args):
+            def foo(self, args: t.Mapping[str, PrimitiveType]) -> FooResolver:
                 return FooResolver(args["foo"])
 
         self.assertQueryResult(

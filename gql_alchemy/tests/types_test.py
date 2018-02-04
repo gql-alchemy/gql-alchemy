@@ -7,7 +7,7 @@ from gql_alchemy.errors import GqlSchemaError
 
 
 class TypesTest(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.type_registry = gt.TypeRegistry(
             [
                 gt.Object("TestObject", {"foo": gt.Field(gt.Int, {})}, set()),
@@ -19,13 +19,13 @@ class TypesTest(unittest.TestCase):
 
 
 class ListTest(TypesTest):
-    def test_str(self):
+    def test_str(self) -> None:
         self.assertEqual("[Boolean]", str(gt.List(gt.Boolean)))
         self.assertEqual("[Boolean!]", str(gt.List(gt.NonNull(gt.Boolean))))
         self.assertEqual("[[Boolean]]", str(gt.List(gt.List(gt.Boolean))))
         self.assertEqual("[Foo]", str(gt.List("Foo")))
 
-    def test_assignment(self):
+    def test_assignment(self) -> None:
         self.assertTrue(gt.List(gt.Boolean).is_assignable([True, False, None], self.type_registry))
         self.assertTrue(gt.List(gt.Boolean).is_assignable(None, self.type_registry))
         self.assertTrue(gt.List(gt.Int).is_assignable([], self.type_registry))
@@ -41,7 +41,7 @@ class ListTest(TypesTest):
             gt.List("TestObject").is_assignable([{"foo": 1}], self.type_registry)
         self.assertEqual("Value must never be assigned to any composite type", str(m.exception))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.List(gt.Boolean).validate_input(qm.ConstListValue([qm.BoolValue(True), qm.NullValue()]), {},
                                                            {}, self.type_registry))
         self.assertTrue(gt.List(gt.Boolean).validate_input(qm.NullValue(), {}, {}, self.type_registry))
@@ -71,7 +71,7 @@ class ListTest(TypesTest):
                                                  {}, {}, self.type_registry)
         self.assertEqual("Validating input for wrapper of non input type", str(m.exception))
 
-    def test_of_type(self):
+    def test_of_type(self) -> None:
         self.assertEqual("Boolean", str(gt.List(gt.Boolean).of_type(self.type_registry)))
         self.assertEqual("Boolean!", str(gt.List(gt.NonNull(gt.Boolean)).of_type(self.type_registry)))
         self.assertEqual("[Boolean]", str(gt.List(gt.List(gt.Boolean)).of_type(self.type_registry)))
@@ -85,19 +85,19 @@ class ListTest(TypesTest):
 
 
 class NonNullTest(TypesTest):
-    def test_str(self):
+    def test_str(self) -> None:
         self.assertEqual("Boolean!", str(gt.NonNull(gt.Boolean)))
         self.assertEqual("[Boolean]!", str(gt.NonNull(gt.List(gt.Boolean))))
         self.assertEqual("Foo!", str(gt.NonNull("Foo")))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.NonNull(gt.Boolean).is_assignable(True, self.type_registry))
         self.assertFalse(gt.NonNull(gt.Boolean).is_assignable(None, self.type_registry))
         with self.assertRaises(RuntimeError) as m:
             gt.NonNull("TestObject").is_assignable("foo", self.type_registry)
         self.assertEqual("Value must never be assigned to any composite type", str(m.exception))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.NonNull(gt.Boolean).validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
         self.assertFalse(gt.NonNull(gt.Boolean).validate_input(qm.NullValue(), {}, {}, self.type_registry))
         self.assertTrue(gt.NonNull(gt.Boolean).validate_input(qm.Variable("foo"), {"foo": True},
@@ -112,14 +112,14 @@ class NonNullTest(TypesTest):
 
 
 class ArgumentTest(TypesTest):
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.Argument(gt.Boolean, None).is_assignable(True, self.type_registry))
         self.assertFalse(gt.Argument(gt.Boolean, None).is_assignable("foo", self.type_registry))
         self.assertFalse(gt.Argument(gt.NonNull(gt.Boolean), None).is_assignable(None, self.type_registry))
         self.assertTrue(gt.Argument("TestInputObject", None).is_assignable({"foo": 1.1}, self.type_registry))
         self.assertFalse(gt.Argument("TestInputObject", None).is_assignable({"foo": 1}, self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
         self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.Variable("foo"), {"foo": False},
                                                                      {"foo": gt.Boolean}, self.type_registry))
@@ -130,7 +130,7 @@ class ArgumentTest(TypesTest):
         self.assertFalse(gt.Argument(gt.Boolean, None).validate_input(qm.Variable("foo"), {"foo": 1},
                                                                       {"foo": gt.Boolean}, self.type_registry))
 
-    def test_type(self):
+    def test_type(self) -> None:
         self.assertEqual(gt.Boolean, gt.Argument(gt.Boolean, None).type(self.type_registry))
         self.assertEqual("TestInputObject!",
                          str(gt.Argument(gt.NonNull("TestInputObject"), None).type(self.type_registry)))
@@ -144,7 +144,7 @@ class ArgumentTest(TypesTest):
 
 
 class FieldTest(TypesTest):
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.Field(gt.Boolean, {}).is_assignable(True, self.type_registry))
         self.assertFalse(gt.Field(gt.Boolean, {}).is_assignable("foo", self.type_registry))
         self.assertFalse(gt.Field(gt.NonNull(gt.Boolean), {}).is_assignable(None, self.type_registry))
@@ -157,7 +157,7 @@ class FieldTest(TypesTest):
             self.assertTrue(gt.Field("TestObject", {}).is_assignable({"foo": 1.1}, self.type_registry))
         self.assertEqual("Value must never be assigned to any composite type", str(m.exception))
 
-    def test_type(self):
+    def test_type(self) -> None:
         self.assertEqual(gt.Boolean, gt.Field(gt.Boolean, {}).type(self.type_registry))
         self.assertEqual("Foo!", str(gt.Field(gt.NonNull("Foo"), {}).type(self.type_registry)))
         self.assertTrue(isinstance(gt.Field("TestObject", {}).type(self.type_registry), gt.Object))
@@ -174,16 +174,16 @@ class FieldTest(TypesTest):
 
 
 class BooleanTest(TypesTest):
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("Boolean", str(gt.Boolean))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.Boolean.is_assignable(True, self.type_registry))
         self.assertTrue(gt.Boolean.is_assignable(False, self.type_registry))
         self.assertTrue(gt.Boolean.is_assignable(None, self.type_registry))
         self.assertFalse(gt.Boolean.is_assignable(1, self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.Boolean.validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
         self.assertTrue(gt.Boolean.validate_input(qm.BoolValue(False), {}, {}, self.type_registry))
         self.assertTrue(gt.Boolean.validate_input(qm.NullValue(), {}, {}, self.type_registry))
@@ -202,15 +202,15 @@ class BooleanTest(TypesTest):
 
 
 class IntTest(TypesTest):
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("Int", str(gt.Int))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.Int.is_assignable(1, self.type_registry))
         self.assertTrue(gt.Int.is_assignable(None, self.type_registry))
         self.assertFalse(gt.Int.is_assignable("1", self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.Int.validate_input(qm.IntValue(1), {}, {}, self.type_registry))
         self.assertTrue(gt.Int.validate_input(qm.NullValue(), {}, {}, self.type_registry))
         self.assertFalse(gt.Int.validate_input(qm.StrValue(""), {}, {}, self.type_registry))
@@ -222,15 +222,15 @@ class IntTest(TypesTest):
 
 
 class FloatTest(TypesTest):
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("Float", str(gt.Float))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.Float.is_assignable(1.1, self.type_registry))
         self.assertTrue(gt.Float.is_assignable(None, self.type_registry))
         self.assertFalse(gt.Float.is_assignable(1, self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.Float.validate_input(qm.FloatValue(1.1), {}, {}, self.type_registry))
         self.assertTrue(gt.Float.validate_input(qm.NullValue(), {}, {}, self.type_registry))
         self.assertFalse(gt.Float.validate_input(qm.IntValue(1), {}, {}, self.type_registry))
@@ -246,15 +246,15 @@ class FloatTest(TypesTest):
 
 
 class StringTest(TypesTest):
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("String", str(gt.String))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.String.is_assignable("foo", self.type_registry))
         self.assertTrue(gt.String.is_assignable(None, self.type_registry))
         self.assertFalse(gt.String.is_assignable(1, self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.String.validate_input(qm.StrValue(""), {}, {}, self.type_registry))
         self.assertTrue(gt.String.validate_input(qm.NullValue(), {}, {}, self.type_registry))
         self.assertFalse(gt.String.validate_input(qm.IntValue(1), {}, {}, self.type_registry))
@@ -269,16 +269,16 @@ class StringTest(TypesTest):
 
 
 class IdTest(TypesTest):
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("ID", str(gt.ID))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.ID.is_assignable(1, self.type_registry))
         self.assertTrue(gt.ID.is_assignable("foo", self.type_registry))
         self.assertTrue(gt.ID.is_assignable(None, self.type_registry))
         self.assertFalse(gt.ID.is_assignable(1.2, self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         self.assertTrue(gt.ID.validate_input(qm.IntValue(2), {}, {}, self.type_registry))
         self.assertTrue(gt.ID.validate_input(qm.StrValue("foo"), {}, {}, self.type_registry))
         self.assertTrue(gt.ID.validate_input(qm.NullValue(), {}, {}, self.type_registry))
@@ -292,7 +292,7 @@ class IdTest(TypesTest):
 
 
 class EnumTest(TypesTest):
-    def test_valudation(self):
+    def test_valudation(self) -> None:
         with self.assertRaises(GqlSchemaError) as m:
             gt.Enum("Test", {"V1"})
         self.assertEqual("Enum must define at least 2 possible values", str(m.exception))
@@ -301,17 +301,17 @@ class EnumTest(TypesTest):
         self.assertEqual("Enum must define at least 2 possible values", str(m.exception))
         gt.Enum("Test", {"V1", "V2"})
 
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("TestEnum", str(gt.Enum("TestEnum", {"V1", "V2"})))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).is_assignable("V1", self.type_registry))
         self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).is_assignable("V2", self.type_registry))
         self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).is_assignable(None, self.type_registry))
         self.assertFalse(gt.Enum("TestEnum", {"V1", "V2"}).is_assignable("V3", self.type_registry))
         self.assertFalse(gt.Enum("TestEnum", {"V1", "V2"}).is_assignable(1, self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         test_enum = gt.Enum("TestEnum", {"V1", "V2"})
 
         self.assertTrue(test_enum.validate_input(qm.EnumValue("V1"), {}, {}, self.type_registry))
@@ -335,12 +335,12 @@ class EnumTest(TypesTest):
 
 
 class InputObjectTest(TypesTest):
-    def test_validation(self):
+    def test_validation(self) -> None:
         with self.assertRaises(GqlSchemaError) as m:
             gt.InputObject("Foo", {})
         self.assertEqual("InputObject must define at least one field", str(m.exception))
 
-    def test_fields(self):
+    def test_fields(self) -> None:
         fields = gt.InputObject("Foo", {
             "i": gt.Int,
             "w1": gt.NonNull(gt.Float),
@@ -357,7 +357,7 @@ class InputObjectTest(TypesTest):
             gt.InputObject("Test", {"foo": "TestObject"}).fields(self.type_registry)
         self.assertEqual("Input type expected here", str(m.exception))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         io = gt.InputObject("Foo", {
             "i": gt.Int,
             "w1": gt.NonNull(gt.Float),
@@ -368,7 +368,7 @@ class InputObjectTest(TypesTest):
         self.assertFalse(io.is_assignable({"i": None, "w1": 1.1, "w2": {"foo": 1.1}, "foo": 1}, self.type_registry))
         self.assertFalse(io.is_assignable([], self.type_registry))
 
-    def test_validate_input(self):
+    def test_validate_input(self) -> None:
         io = gt.InputObject("Foo", {
             "i": gt.Int,
             "w1": gt.NonNull(gt.Float),
@@ -404,19 +404,19 @@ class InputObjectTest(TypesTest):
 
 
 class ObjectTest(TypesTest):
-    def test_validation(self):
+    def test_validation(self) -> None:
         with self.assertRaises(GqlSchemaError) as m:
             gt.Object("Foo", {}, set())
         self.assertEqual("Object must define at least one field or implement interface", str(m.exception))
         gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())
         gt.Object("Foo", {}, set("I"))
 
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("Foo", str(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
 
 
 class UnionTest(TypesTest):
-    def test_validation(self):
+    def test_validation(self) -> None:
         with self.assertRaises(GqlSchemaError) as m:
             gt.Union("Foo", set())
         self.assertEqual("Union must unite at least 2 objects", str(m.exception))
@@ -424,7 +424,7 @@ class UnionTest(TypesTest):
             gt.Union("Foo", {"TestObject"})
         self.assertEqual("Union must unite at least 2 objects", str(m.exception))
 
-    def test_of_objects(self):
+    def test_of_objects(self) -> None:
         with self.assertRaises(RuntimeError) as m:
             gt.Union("Foo", {"TestObject", "Abc"}).of_objects(self.type_registry)
         self.assertEqual("Can not resolve `Abc` type", str(m.exception))
@@ -441,17 +441,17 @@ class UnionTest(TypesTest):
 
         self.assertEqual(objs, union.of_objects(self.type_registry))
 
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("Foo", str(gt.Union("Foo", {"TestObject", "TestObject2"})))
 
-    def test_is_assignable(self):
+    def test_is_assignable(self) -> None:
         with self.assertRaises(RuntimeError) as m:
             gt.Union("Foo", {"TestObject", "TestObject2"}).is_assignable(1, self.type_registry)
         self.assertEqual("Value must never be assigned to union", str(m.exception))
 
 
 class TypeClassificationTest(TypesTest):
-    def test_scalar(self):
+    def test_scalar(self) -> None:
         self.assertIsNotNone(gt.is_scalar(gt.Boolean))
         self.assertIsNotNone(gt.is_scalar(gt.Int))
         self.assertIsNotNone(gt.is_scalar(gt.Float))
@@ -470,7 +470,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("Scalar expected here", str(m.exception))
         gt.assert_scalar(gt.Int)
 
-    def test_wrapper(self):
+    def test_wrapper(self) -> None:
         self.assertIsNone(gt.is_wrapper(gt.Boolean))
         self.assertIsNone(gt.is_wrapper(gt.Int))
         self.assertIsNone(gt.is_wrapper(gt.Float))
@@ -489,7 +489,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("Wrapper expected here", str(m.exception))
         gt.assert_wrapper(gt.NonNull(gt.Int))
 
-    def test_non_wrapper(self):
+    def test_non_wrapper(self) -> None:
         self.assertIsNotNone(gt.is_non_wrapper(gt.Boolean))
         self.assertIsNotNone(gt.is_non_wrapper(gt.Int))
         self.assertIsNotNone(gt.is_non_wrapper(gt.Float))
@@ -508,7 +508,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("Non wrapper expected here", str(m.exception))
         gt.assert_non_wrapper(gt.Boolean)
 
-    def test_spreadable(self):
+    def test_spreadable(self) -> None:
         self.assertIsNone(gt.is_spreadable(gt.Boolean))
         self.assertIsNone(gt.is_spreadable(gt.Int))
         self.assertIsNone(gt.is_spreadable(gt.Float))
@@ -527,7 +527,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("Spreadable expected here", str(m.exception))
         gt.assert_spreadable(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})}))
 
-    def test_selectable(self):
+    def test_selectable(self) -> None:
         self.assertIsNone(gt.is_selectable(gt.Boolean))
         self.assertIsNone(gt.is_selectable(gt.Int))
         self.assertIsNone(gt.is_selectable(gt.Float))
@@ -546,7 +546,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("Selectable expected here", str(m.exception))
         gt.assert_selectable(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})}))
 
-    def test_input(self):
+    def test_input(self) -> None:
         self.assertIsNotNone(gt.is_input(gt.Boolean))
         self.assertIsNotNone(gt.is_input(gt.Int))
         self.assertIsNotNone(gt.is_input(gt.Float))
@@ -565,7 +565,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("Input type expected here", str(m.exception))
         gt.assert_input(gt.Boolean)
 
-    def test_output(self):
+    def test_output(self) -> None:
         self.assertIsNotNone(gt.is_output(gt.Boolean))
         self.assertIsNotNone(gt.is_output(gt.Int))
         self.assertIsNotNone(gt.is_output(gt.Float))
@@ -584,7 +584,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("Output type expected here", str(m.exception))
         gt.assert_output(gt.Boolean)
 
-    def test_user(self):
+    def test_user(self) -> None:
         self.assertIsNone(gt.is_user(gt.Boolean))
         self.assertIsNone(gt.is_user(gt.Int))
         self.assertIsNone(gt.is_user(gt.Float))
@@ -603,7 +603,7 @@ class TypeClassificationTest(TypesTest):
         self.assertEqual("User defined type expected here", str(m.exception))
         gt.assert_user(gt.Enum("Foo", {"V1", "V2"}))
 
-    def test_inline(self):
+    def test_inline(self) -> None:
         self.assertIsNotNone(gt.is_inline(gt.Boolean))
         self.assertIsNotNone(gt.is_inline(gt.Int))
         self.assertIsNotNone(gt.is_inline(gt.Float))
@@ -624,12 +624,12 @@ class TypeClassificationTest(TypesTest):
 
 
 class DirectiveTest(TypesTest):
-    def test_name(self):
+    def test_name(self) -> None:
         self.assertEqual("@foo", str(gt.Directive("foo", {gt.DirectiveLocations.MUTATION}, {})))
 
 
 class TypeRegistryTest(TypesTest):
-    def test_resolve_type(self):
+    def test_resolve_type(self) -> None:
         tr = self.type_registry
         self.assertEqual(gt.Boolean, tr.resolve_type("Boolean"))
         self.assertEqual(gt.Int, tr.resolve_type("Int"))
@@ -654,7 +654,7 @@ class TypeRegistryTest(TypesTest):
             tr.resolve_type("Foo")
         self.assertEqual("Can not resolve `Foo` type", str(m.exception))
 
-    def test_resolve_and_unwrap(self):
+    def test_resolve_and_unwrap(self) -> None:
         tr = self.type_registry
 
         self.assertEqual(gt.Int, tr.resolve_and_unwrap(gt.Int))
@@ -666,7 +666,7 @@ class TypeRegistryTest(TypesTest):
         self.assertEqual("TestObject", str(tr.resolve_and_unwrap(gt.List(gt.List(gt.NonNull("TestObject"))))))
         self.assertTrue(isinstance(tr.resolve_and_unwrap(gt.List(gt.List(gt.NonNull("TestObject")))), gt.Object))
 
-    def test_objects_by_interface(self):
+    def test_objects_by_interface(self) -> None:
         tr = gt.TypeRegistry(
             [
                 gt.Interface("I1", {"foo": gt.Field(gt.Int, {})}),
@@ -683,12 +683,12 @@ class TypeRegistryTest(TypesTest):
         self.assertEqual({"O2", "O3", "O4", "O5"}, set((str(o) for o in tr.objects_by_interface("I2"))))
 
     def assertValidationError(self, error: str, types: t.Sequence[gt.UserType],
-                              directives: t.Optional[t.Sequence[gt.Directive]] = None):
+                              directives: t.Optional[t.Sequence[gt.Directive]] = None) -> None:
         with self.assertRaises(GqlSchemaError) as m:
             gt.TypeRegistry(types, [] if directives is None else directives)
         self.assertEqual(error, str(m.exception))
 
-    def test_validate_refs(self):
+    def test_validate_refs(self) -> None:
         self.assertValidationError("Can not resolve `IO` type; problem with `foo` field of `I1` type", [
             gt.Interface("I1", {"foo": gt.Field("IO", {})})
         ])
@@ -747,7 +747,7 @@ class TypeRegistryTest(TypesTest):
             ]
         )
 
-    def test_validate_names(self):
+    def test_validate_names(self) -> None:
         self.assertValidationError("Wrong type name: /[_A-Za-z][_0-9A-Za-z]*/ expected, but got '!Foo'", [
             gt.Interface("!Foo", {"foo": gt.Field(gt.Int, {})})
         ])
@@ -791,7 +791,7 @@ class TypeRegistryTest(TypesTest):
             ]
         )
 
-    def test_input_output_types(self):
+    def test_input_output_types(self) -> None:
         self.assertValidationError(
             "Output type expected here; problem with `foo` field of `Foo` type", [
                 gt.InputObject("IO1", {"foo": gt.Int}),
@@ -806,7 +806,7 @@ class TypeRegistryTest(TypesTest):
             ]
         )
 
-    def test_argument_default(self):
+    def test_argument_default(self) -> None:
         gt.TypeRegistry(
             [
                 gt.InputObject("IO1", {"foo": gt.Int}),
@@ -823,7 +823,7 @@ class TypeRegistryTest(TypesTest):
             ]
         )
 
-    def test_fields_redeclaration(self):
+    def test_fields_redeclaration(self) -> None:
         gt.TypeRegistry(
             [
                 gt.Interface("I1", {"foo": gt.Field(gt.Int, {})}),
@@ -854,7 +854,7 @@ class TypeRegistryTest(TypesTest):
             ]
         )
 
-    def test_directive_args(self):
+    def test_directive_args(self) -> None:
         gt.TypeRegistry(
             [], [
                 gt.Directive("foo", {gt.DirectiveLocations.MUTATION}, {"foo": gt.Argument(gt.Int, 1)})
