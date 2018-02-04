@@ -438,7 +438,17 @@ class SelectionsParserTest(ParsingTest):
             '{"@frg-inline": null, "selections": [{"@f": "name"}]}'
         )
         self.assertParserResults(
+            "{ id ...{ name }}",
+            '{"@f": "id"}',
+            '{"@frg-inline": null, "selections": [{"@f": "name"}]}'
+        )
+        self.assertParserResults(
             "{ id ... foo }",
+            '{"@f": "id"}',
+            '{"@frg-spread": "foo"}'
+        )
+        self.assertParserResults(
+            "{ id ...foo }",
             '{"@f": "id"}',
             '{"@frg-spread": "foo"}'
         )
@@ -450,6 +460,11 @@ class SelectionsParserTest(ParsingTest):
         )
         self.assertParserResults(
             "{ id ... on Foo { name }}",
+            '{"@f": "id"}',
+            '{"@frg-inline": null, "on_type": {"@named": "Foo"}, "selections": [{"@f": "name"}]}',
+        )
+        self.assertParserResults(
+            "{ id ...on Foo { name }}",
             '{"@f": "id"}',
             '{"@frg-inline": null, "on_type": {"@named": "Foo"}, "selections": [{"@f": "name"}]}',
         )

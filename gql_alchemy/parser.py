@@ -198,6 +198,12 @@ class ElementParser:
             raise LiteralExpected([literal], reader)
 
     @staticmethod
+    def assert_ellipsis(reader: Reader) -> None:
+        next_literal = reader.read_re(re.compile(r'[.]{3}(?=[^.]|$)'))
+        if next_literal is None:
+            raise LiteralExpected(["..."], reader)
+
+    @staticmethod
     def try_literal(reader: Reader, literal: str) -> bool:
         next_literal = reader.read_re(re.compile(r'(?:' + literal + r')(?=[^_0-9A-Za-z]|$)'))
         return next_literal is not None
@@ -556,7 +562,7 @@ class ArgumentParser(ElementParser):
 
 
 class SelectionsParser(ElementParser):
-    DETECT_FRAGMENT_SPREAD_RE = re.compile(r'\.\.\.[ \t]+([_A-Za-z][_0-9A-Za-z]*)')
+    DETECT_FRAGMENT_SPREAD_RE = re.compile(r'[.]{3}[ \t]*([_A-Za-z][_0-9A-Za-z]*)')
 
     def __init__(self, selections: t.List[qm.Selection]) -> None:
         self.selections = selections
@@ -952,7 +958,7 @@ class FragmentSpreadParser(ElementParser):
         self.directives: t.List[qm.Directive] = []
 
     def consume(self, reader: Reader) -> None:
-        self.assert_literal(reader, "...")
+        self.assert_ellipsis(reader)
 
         self.name = self.read_name(reader)
 
@@ -988,7 +994,7 @@ class InlineFragmentParser(ElementParser):
         self.selections_parsed = False
 
     def consume(self, reader: Reader) -> None:
-        self.assert_literal(reader, "...")
+        self.assert_ellipsis(reader)
 
         if self.try_literal(reader, "on"):
             type_name = self.read_name(reader)
