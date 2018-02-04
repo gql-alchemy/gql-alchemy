@@ -23,6 +23,24 @@ class TypeResolvingError(RuntimeError):
         return t.cast(str, self.args[0])
 
 
+class UndefinedVariableError(RuntimeError):
+    def __init__(self, name: str) -> None:
+        super().__init__("Undefined variable `{}`".format(name), name)
+
+    def __str__(self) -> str:
+        return t.cast(str, self.args[0])
+
+
+class NonCompatibleVariableType(RuntimeError):
+    def __init__(self, var_name: str, expected: 'GqlType', got: 'GqlType') -> None:
+        super().__init__(
+            "Type of `{}` variable is not compatible, `{}` expected, but got `{}`".format(var_name, expected, got),
+            var_name, expected, got)
+
+    def __str__(self) -> str:
+        return t.cast(str, self.args[0])
+
+
 class GqlType:
     def __init__(self, name: str) -> None:
         self.__name = name
@@ -35,7 +53,9 @@ class GqlType:
 
 
 class _PossibleInputType(GqlType):
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         raise NotImplementedError()
 
@@ -63,7 +83,9 @@ class _TypeWrapper(_PossibleInputType):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         raise NotImplementedError()
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         raise NotImplementedError()
 
@@ -90,10 +112,17 @@ class List(_TypeWrapper):
 
         return True
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
 
         if isinstance(value, qm.NullValue):
@@ -107,7 +136,7 @@ class List(_TypeWrapper):
             raise _SchemaAssertionError("Validating input for wrapper of non input type", "of_type")
 
         for i in value.values:
-            if not of_type.validate_input(i, variables, type_registry):
+            if not of_type.validate_input(i, vars_values, vars_defs, type_registry):
                 return False
 
         return True
@@ -125,17 +154,24 @@ class NonNull(_TypeWrapper):
 
         return wrapped_type.is_assignable(value, type_registry)
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         if isinstance(value, qm.NullValue):
             return False
         of_type = self.of_type(type_registry)
         if not isinstance(of_type, _PossibleInputType):
             raise _SchemaAssertionError("Validating input for wrapper of non input type", "of_type")
-        return of_type.validate_input(value, variables, type_registry)
+        return of_type.validate_input(value, vars_values, vars_defs, type_registry)
 
 
 class Argument:
@@ -148,10 +184,12 @@ class Argument:
         self_type = self.type(type_registry)
         return self_type.is_assignable(value, type_registry)
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         self_type = self.type(type_registry)
-        return self_type.validate_input(value, variables, type_registry)
+        return self_type.validate_input(value, vars_values, vars_defs, type_registry)
 
     def type(self, type_registry: 'TypeRegistry') -> t.Union['InputType', 'WrapperType']:
         if self.__type_resolved is None:
@@ -203,7 +241,9 @@ class _Scalar(_PossibleInputType):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         raise NotImplementedError()
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         raise NotImplementedError()
 
@@ -212,10 +252,17 @@ class _Boolean(_Scalar):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         return value is None or isinstance(value, bool)
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         return isinstance(value, qm.BoolValue) or isinstance(value, qm.NullValue)
 
@@ -224,10 +271,17 @@ class _Int(_Scalar):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         return value is None or isinstance(value, int)
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         return isinstance(value, qm.IntValue) or isinstance(value, qm.NullValue)
 
@@ -236,10 +290,17 @@ class _Float(_Scalar):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         return value is None or isinstance(value, float)
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         return isinstance(value, qm.FloatValue) or isinstance(value, qm.NullValue)
 
@@ -248,10 +309,17 @@ class _String(_Scalar):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         return value is None or isinstance(value, str)
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         return isinstance(value, qm.StrValue) or isinstance(value, qm.NullValue)
 
@@ -260,10 +328,17 @@ class _ID(_Scalar):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         return value is None or isinstance(value, int) or isinstance(value, str)
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         return isinstance(value, qm.IntValue) or isinstance(value, qm.StrValue) or isinstance(value, qm.NullValue)
 
@@ -285,10 +360,17 @@ class Enum(GqlType):
     def is_assignable(self, value: PrimitiveType, type_registry: 'TypeRegistry') -> bool:
         return value is None or isinstance(value, str) and value in self.values
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         if isinstance(value, qm.NullValue):
             return True
@@ -298,7 +380,8 @@ class Enum(GqlType):
 
 
 class Interface(_GqlCompositeType):
-    pass
+    def of_objects(self, type_registry: 'TypeRegistry') -> t.Sequence['Object']:
+        return type_registry.objects_by_interface(str(self))
 
 
 class InputObject(_PossibleInputType):
@@ -328,10 +411,17 @@ class InputObject(_PossibleInputType):
             self.__fields_resolved = fields_resolved
         return self.__fields_resolved
 
-    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue], variables: t.Mapping[str, PrimitiveType],
+    def validate_input(self, value: t.Union[qm.Value, qm.ConstValue],
+                       vars_values: t.Optional[t.Mapping[str, PrimitiveType]],
+                       vars_defs: t.Mapping[str, GqlType],
                        type_registry: 'TypeRegistry') -> bool:
         if isinstance(value, qm.Variable):
-            p_value = variables.get(value.name)
+            _validate_variable(value, self, vars_defs)
+
+            if vars_values is None:
+                return True
+
+            p_value = vars_values.get(value.name)
             return self.is_assignable(p_value, type_registry)
         if isinstance(value, qm.NullValue):
             return True
@@ -347,7 +437,7 @@ class InputObject(_PossibleInputType):
                 field_value = value.values.get(key)
                 if field_value is None:
                     field_value = qm.NullValue()
-                if not field_type.validate_input(field_value, variables, type_registry):
+                if not field_type.validate_input(field_value, vars_values, vars_defs, type_registry):
                     return False
             return True
         return False
@@ -738,7 +828,7 @@ class TypeRegistry:
             self.__types_by_names[str(type_def)] = type_def
 
         self.__directives = directives
-        self.__directives_by_names = dict(((str(gql_type)[1:], gql_type) for gql_type in self.__types))
+        self.__directives_by_names = dict(((str(directive)[1:], directive) for directive in self.__directives))
 
         self.__validate()
 
@@ -772,6 +862,12 @@ class TypeRegistry:
 
     def objects_by_interface(self, interface_name: str) -> t.Sequence[Object]:
         return self.__objects_by_interfaces[interface_name]
+
+    def directive(self, name: str) -> Directive:
+        if name in self.__directives_by_names:
+            return self.__directives_by_names[name]
+
+        raise TypeResolvingError("Directive `{}` not found".format(name))
 
     __NAME_RE = re.compile(r'^[_A-Za-z][_0-9A-Za-z]*$')
 
@@ -907,6 +1003,15 @@ class TypeRegistry:
                     )
                 )
         self.__validate_fields(obj)
+
+
+def _validate_variable(var: qm.Variable, expected: GqlType, vars_defs: t.Mapping[str, GqlType]) -> None:
+    if var.name not in vars_defs:
+        raise UndefinedVariableError(var.name)
+
+    var_def = vars_defs[var.name]
+    if str(expected) != str(var_def):
+        raise NonCompatibleVariableType(var.name, expected, var_def)
 
 
 __all__ = ["TypeResolvingError", "GqlType", "List", "NonNull", "Argument", "Field", "Boolean", "Int", "Float",

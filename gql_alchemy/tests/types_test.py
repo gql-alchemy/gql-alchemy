@@ -43,30 +43,32 @@ class ListTest(TypesTest):
 
     def test_validate_input(self):
         self.assertTrue(gt.List(gt.Boolean).validate_input(qm.ConstListValue([qm.BoolValue(True), qm.NullValue()]), {},
-                                                           self.type_registry))
-        self.assertTrue(gt.List(gt.Boolean).validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertTrue(gt.List(gt.Int).validate_input(qm.ConstListValue([]), {}, self.type_registry))
+                                                           {}, self.type_registry))
+        self.assertTrue(gt.List(gt.Boolean).validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertTrue(gt.List(gt.Int).validate_input(qm.ConstListValue([]), {}, {}, self.type_registry))
         self.assertTrue(gt.List(gt.Int).validate_input(qm.ListValue([qm.IntValue(1), qm.Variable("foo")]), {"foo": 4},
+                                                       {"foo": gt.Int}, self.type_registry))
+        self.assertTrue(gt.List(gt.Int).validate_input(qm.ListValue([qm.IntValue(1), qm.Variable("foo")]),
+                                                       {"foo": None}, {"foo": gt.Int}, self.type_registry))
+        self.assertTrue(gt.List(gt.Int).validate_input(qm.ListValue([qm.IntValue(1), qm.Variable("foo")]),
+                                                       {}, {"foo": gt.Int}, self.type_registry))
+        self.assertTrue(gt.List(gt.Int).validate_input(qm.Variable("foo"), {"foo": [1, 2, None]},
+                                                       {"foo": gt.List(gt.Int)}, self.type_registry))
+        self.assertTrue(gt.List(gt.Int).validate_input(qm.Variable("foo"), {}, {"foo": gt.List(gt.Int)},
                                                        self.type_registry))
-        self.assertTrue(gt.List(gt.Int).validate_input(qm.ListValue([qm.IntValue(1), qm.Variable("foo")]),
-                                                       {"foo": None}, self.type_registry))
-        self.assertTrue(gt.List(gt.Int).validate_input(qm.ListValue([qm.IntValue(1), qm.Variable("foo")]),
-                                                       {}, self.type_registry))
-        self.assertTrue(gt.List(gt.Int).validate_input(qm.Variable("foo"),
-                                                       {"foo": [1, 2, None]}, self.type_registry))
-        self.assertTrue(gt.List(gt.Int).validate_input(qm.Variable("foo"), {}, self.type_registry))
 
         self.assertFalse(gt.List(gt.Boolean).validate_input(qm.ConstListValue([qm.BoolValue(True), qm.IntValue(1)]),
-                                                            {}, self.type_registry))
-        self.assertFalse(gt.List(gt.Boolean).validate_input(qm.BoolValue(False), {}, self.type_registry))
-        self.assertFalse(gt.List(gt.Int).validate_input(qm.ObjectValue({}), {}, self.type_registry))
-        self.assertFalse(gt.List(gt.Int).validate_input(qm.Variable("foo"),
-                                                        {"foo": ["foo"]}, self.type_registry))
-        self.assertFalse(gt.List(gt.Int).validate_input(qm.Variable("foo"), {"foo": "foo"}, self.type_registry))
+                                                            {}, {}, self.type_registry))
+        self.assertFalse(gt.List(gt.Boolean).validate_input(qm.BoolValue(False), {}, {}, self.type_registry))
+        self.assertFalse(gt.List(gt.Int).validate_input(qm.ObjectValue({}), {}, {}, self.type_registry))
+        self.assertFalse(gt.List(gt.Int).validate_input(qm.Variable("foo"), {"foo": ["foo"]}, {"foo": gt.List(gt.Int)},
+                                                        self.type_registry))
+        self.assertFalse(gt.List(gt.Int).validate_input(qm.Variable("foo"), {"foo": "foo"}, {"foo": gt.List(gt.Int)},
+                                                        self.type_registry))
 
         with self.assertRaises(RuntimeError) as m:
             gt.List("TestObject").validate_input(qm.ConstListValue([qm.ConstObjectValue({"foo": qm.IntValue(1)})]),
-                                                 {}, self.type_registry)
+                                                 {}, {}, self.type_registry)
         self.assertEqual("Validating input for wrapper of non input type", str(m.exception))
 
     def test_of_type(self):
@@ -96,13 +98,16 @@ class NonNullTest(TypesTest):
         self.assertEqual("Value must never be assigned to any composite type", str(m.exception))
 
     def test_validate_input(self):
-        self.assertTrue(gt.NonNull(gt.Boolean).validate_input(qm.BoolValue(True), {}, self.type_registry))
-        self.assertFalse(gt.NonNull(gt.Boolean).validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertTrue(gt.NonNull(gt.Boolean).validate_input(qm.Variable("foo"), {"foo": True}, self.type_registry))
-        self.assertFalse(gt.NonNull(gt.Boolean).validate_input(qm.Variable("foo"), {"foo": None}, self.type_registry))
-        self.assertFalse(gt.NonNull(gt.Boolean).validate_input(qm.Variable("foo"), {}, self.type_registry))
+        self.assertTrue(gt.NonNull(gt.Boolean).validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
+        self.assertFalse(gt.NonNull(gt.Boolean).validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertTrue(gt.NonNull(gt.Boolean).validate_input(qm.Variable("foo"), {"foo": True},
+                                                              {"foo": gt.NonNull(gt.Boolean)}, self.type_registry))
+        self.assertFalse(gt.NonNull(gt.Boolean).validate_input(qm.Variable("foo"), {"foo": None},
+                                                               {"foo": gt.NonNull(gt.Boolean)}, self.type_registry))
+        self.assertFalse(gt.NonNull(gt.Boolean).validate_input(qm.Variable("foo"), {},
+                                                               {"foo": gt.NonNull(gt.Boolean)}, self.type_registry))
         with self.assertRaises(RuntimeError) as m:
-            gt.NonNull("TestObject").validate_input(qm.ObjectValue({"foo": qm.IntValue(1)}), {}, self.type_registry)
+            gt.NonNull("TestObject").validate_input(qm.ObjectValue({"foo": qm.IntValue(1)}), {}, {}, self.type_registry)
         self.assertEqual("Validating input for wrapper of non input type", str(m.exception))
 
 
@@ -115,15 +120,15 @@ class ArgumentTest(TypesTest):
         self.assertFalse(gt.Argument("TestInputObject", None).is_assignable({"foo": 1}, self.type_registry))
 
     def test_validate_input(self):
-        self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.BoolValue(True), {}, self.type_registry))
+        self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
         self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.Variable("foo"), {"foo": False},
-                                                                     self.type_registry))
+                                                                     {"foo": gt.Boolean}, self.type_registry))
         self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.Variable("foo"), {"foo": None},
-                                                                     self.type_registry))
-        self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.Variable("foo"), {},
+                                                                     {"foo": gt.Boolean}, self.type_registry))
+        self.assertTrue(gt.Argument(gt.Boolean, None).validate_input(qm.Variable("foo"), {}, {"foo": gt.Boolean},
                                                                      self.type_registry))
         self.assertFalse(gt.Argument(gt.Boolean, None).validate_input(qm.Variable("foo"), {"foo": 1},
-                                                                      self.type_registry))
+                                                                      {"foo": gt.Boolean}, self.type_registry))
 
     def test_type(self):
         self.assertEqual(gt.Boolean, gt.Argument(gt.Boolean, None).type(self.type_registry))
@@ -179,16 +184,21 @@ class BooleanTest(TypesTest):
         self.assertFalse(gt.Boolean.is_assignable(1, self.type_registry))
 
     def test_validate_input(self):
-        self.assertTrue(gt.Boolean.validate_input(qm.BoolValue(True), {}, self.type_registry))
-        self.assertTrue(gt.Boolean.validate_input(qm.BoolValue(False), {}, self.type_registry))
-        self.assertTrue(gt.Boolean.validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertFalse(gt.Boolean.validate_input(qm.IntValue(1), {}, self.type_registry))
+        self.assertTrue(gt.Boolean.validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
+        self.assertTrue(gt.Boolean.validate_input(qm.BoolValue(False), {}, {}, self.type_registry))
+        self.assertTrue(gt.Boolean.validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertFalse(gt.Boolean.validate_input(qm.IntValue(1), {}, {}, self.type_registry))
 
-        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": True}, self.type_registry))
-        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": False}, self.type_registry))
-        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": None}, self.type_registry))
-        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {}, self.type_registry))
-        self.assertFalse(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": 1}, self.type_registry))
+        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": True}, {"foo": gt.Boolean},
+                                                  self.type_registry))
+        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": False}, {"foo": gt.Boolean},
+                                                  self.type_registry))
+        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": None}, {"foo": gt.Boolean},
+                                                  self.type_registry))
+        self.assertTrue(gt.Boolean.validate_input(qm.Variable("foo"), {}, {"foo": gt.Boolean},
+                                                  self.type_registry))
+        self.assertFalse(gt.Boolean.validate_input(qm.Variable("foo"), {"foo": 1}, {"foo": gt.Boolean},
+                                                   self.type_registry))
 
 
 class IntTest(TypesTest):
@@ -201,14 +211,14 @@ class IntTest(TypesTest):
         self.assertFalse(gt.Int.is_assignable("1", self.type_registry))
 
     def test_validate_input(self):
-        self.assertTrue(gt.Int.validate_input(qm.IntValue(1), {}, self.type_registry))
-        self.assertTrue(gt.Int.validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertFalse(gt.Int.validate_input(qm.StrValue(""), {}, self.type_registry))
+        self.assertTrue(gt.Int.validate_input(qm.IntValue(1), {}, {}, self.type_registry))
+        self.assertTrue(gt.Int.validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertFalse(gt.Int.validate_input(qm.StrValue(""), {}, {}, self.type_registry))
 
-        self.assertTrue(gt.Int.validate_input(qm.Variable("foo"), {"foo": 1}, self.type_registry))
-        self.assertTrue(gt.Int.validate_input(qm.Variable("foo"), {"foo": None}, self.type_registry))
-        self.assertTrue(gt.Int.validate_input(qm.Variable("foo"), {}, self.type_registry))
-        self.assertFalse(gt.Int.validate_input(qm.Variable("foo"), {"foo": 1.1}, self.type_registry))
+        self.assertTrue(gt.Int.validate_input(qm.Variable("foo"), {"foo": 1}, {"foo": gt.Int}, self.type_registry))
+        self.assertTrue(gt.Int.validate_input(qm.Variable("foo"), {"foo": None}, {"foo": gt.Int}, self.type_registry))
+        self.assertTrue(gt.Int.validate_input(qm.Variable("foo"), {}, {"foo": gt.Int}, self.type_registry))
+        self.assertFalse(gt.Int.validate_input(qm.Variable("foo"), {"foo": 1.1}, {"foo": gt.Int}, self.type_registry))
 
 
 class FloatTest(TypesTest):
@@ -221,14 +231,18 @@ class FloatTest(TypesTest):
         self.assertFalse(gt.Float.is_assignable(1, self.type_registry))
 
     def test_validate_input(self):
-        self.assertTrue(gt.Float.validate_input(qm.FloatValue(1.1), {}, self.type_registry))
-        self.assertTrue(gt.Float.validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertFalse(gt.Float.validate_input(qm.IntValue(1), {}, self.type_registry))
+        self.assertTrue(gt.Float.validate_input(qm.FloatValue(1.1), {}, {}, self.type_registry))
+        self.assertTrue(gt.Float.validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertFalse(gt.Float.validate_input(qm.IntValue(1), {}, {}, self.type_registry))
 
-        self.assertTrue(gt.Float.validate_input(qm.Variable("foo"), {"foo": 1.1}, self.type_registry))
-        self.assertTrue(gt.Float.validate_input(qm.Variable("foo"), {"foo": None}, self.type_registry))
-        self.assertTrue(gt.Float.validate_input(qm.Variable("foo"), {}, self.type_registry))
-        self.assertFalse(gt.Float.validate_input(qm.Variable("foo"), {"foo": 1}, self.type_registry))
+        self.assertTrue(gt.Float.validate_input(qm.Variable("foo"), {"foo": 1.1}, {"foo": gt.Float},
+                                                self.type_registry))
+        self.assertTrue(gt.Float.validate_input(qm.Variable("foo"), {"foo": None}, {"foo": gt.Float},
+                                                self.type_registry))
+        self.assertTrue(gt.Float.validate_input(qm.Variable("foo"), {}, {"foo": gt.Float},
+                                                self.type_registry))
+        self.assertFalse(gt.Float.validate_input(qm.Variable("foo"), {"foo": 1}, {"foo": gt.Float},
+                                                 self.type_registry))
 
 
 class StringTest(TypesTest):
@@ -241,14 +255,17 @@ class StringTest(TypesTest):
         self.assertFalse(gt.String.is_assignable(1, self.type_registry))
 
     def test_validate_input(self):
-        self.assertTrue(gt.String.validate_input(qm.StrValue(""), {}, self.type_registry))
-        self.assertTrue(gt.String.validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertFalse(gt.String.validate_input(qm.IntValue(1), {}, self.type_registry))
+        self.assertTrue(gt.String.validate_input(qm.StrValue(""), {}, {}, self.type_registry))
+        self.assertTrue(gt.String.validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertFalse(gt.String.validate_input(qm.IntValue(1), {}, {}, self.type_registry))
 
-        self.assertTrue(gt.String.validate_input(qm.Variable("foo"), {"foo": "foo"}, self.type_registry))
-        self.assertTrue(gt.String.validate_input(qm.Variable("foo"), {"foo": None}, self.type_registry))
-        self.assertTrue(gt.String.validate_input(qm.Variable("foo"), {}, self.type_registry))
-        self.assertFalse(gt.String.validate_input(qm.Variable("foo"), {"foo": 1}, self.type_registry))
+        self.assertTrue(gt.String.validate_input(qm.Variable("foo"), {"foo": "foo"}, {"foo": gt.String},
+                                                 self.type_registry))
+        self.assertTrue(gt.String.validate_input(qm.Variable("foo"), {"foo": None}, {"foo": gt.String},
+                                                 self.type_registry))
+        self.assertTrue(gt.String.validate_input(qm.Variable("foo"), {}, {"foo": gt.String}, self.type_registry))
+        self.assertFalse(gt.String.validate_input(qm.Variable("foo"), {"foo": 1}, {"foo": gt.String},
+                                                  self.type_registry))
 
 
 class IdTest(TypesTest):
@@ -262,16 +279,16 @@ class IdTest(TypesTest):
         self.assertFalse(gt.ID.is_assignable(1.2, self.type_registry))
 
     def test_validate_input(self):
-        self.assertTrue(gt.ID.validate_input(qm.IntValue(2), {}, self.type_registry))
-        self.assertTrue(gt.ID.validate_input(qm.StrValue("foo"), {}, self.type_registry))
-        self.assertTrue(gt.ID.validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertFalse(gt.ID.validate_input(qm.BoolValue(True), {}, self.type_registry))
+        self.assertTrue(gt.ID.validate_input(qm.IntValue(2), {}, {}, self.type_registry))
+        self.assertTrue(gt.ID.validate_input(qm.StrValue("foo"), {}, {}, self.type_registry))
+        self.assertTrue(gt.ID.validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertFalse(gt.ID.validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
 
-        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {"foo": 1}, self.type_registry))
-        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {"foo": "bar"}, self.type_registry))
-        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {"foo": None}, self.type_registry))
-        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {}, self.type_registry))
-        self.assertFalse(gt.ID.validate_input(qm.Variable("foo"), {"foo": 1.1}, self.type_registry))
+        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {"foo": 1}, {"foo": gt.ID}, self.type_registry))
+        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {"foo": "bar"}, {"foo": gt.ID}, self.type_registry))
+        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {"foo": None}, {"foo": gt.ID}, self.type_registry))
+        self.assertTrue(gt.ID.validate_input(qm.Variable("foo"), {}, {"foo": gt.ID}, self.type_registry))
+        self.assertFalse(gt.ID.validate_input(qm.Variable("foo"), {"foo": 1.1}, {"foo": gt.ID}, self.type_registry))
 
 
 class EnumTest(TypesTest):
@@ -295,24 +312,26 @@ class EnumTest(TypesTest):
         self.assertFalse(gt.Enum("TestEnum", {"V1", "V2"}).is_assignable(1, self.type_registry))
 
     def test_validate_input(self):
-        self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.EnumValue("V1"), {}, self.type_registry))
-        self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.EnumValue("V2"), {}, self.type_registry))
-        self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.NullValue(), {}, self.type_registry))
-        self.assertFalse(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.EnumValue("V3"), {}, self.type_registry))
-        self.assertFalse(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.BoolValue(True), {}, self.type_registry))
+        test_enum = gt.Enum("TestEnum", {"V1", "V2"})
 
-        self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.Variable("foo"), {"foo": "V1"},
-                                                                         self.type_registry))
-        self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.Variable("foo"), {"foo": "V2"},
-                                                                         self.type_registry))
-        self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.Variable("foo"), {"foo": None},
-                                                                         self.type_registry))
-        self.assertTrue(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.Variable("foo"), {},
-                                                                         self.type_registry))
-        self.assertFalse(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.Variable("foo"), {"foo": "V3"},
-                                                                          self.type_registry))
-        self.assertFalse(gt.Enum("TestEnum", {"V1", "V2"}).validate_input(qm.Variable("foo"), {"foo": 1.1},
-                                                                          self.type_registry))
+        self.assertTrue(test_enum.validate_input(qm.EnumValue("V1"), {}, {}, self.type_registry))
+        self.assertTrue(test_enum.validate_input(qm.EnumValue("V2"), {}, {}, self.type_registry))
+        self.assertTrue(test_enum.validate_input(qm.NullValue(), {}, {}, self.type_registry))
+        self.assertFalse(test_enum.validate_input(qm.EnumValue("V3"), {}, {}, self.type_registry))
+        self.assertFalse(test_enum.validate_input(qm.BoolValue(True), {}, {}, self.type_registry))
+
+        self.assertTrue(test_enum.validate_input(qm.Variable("foo"), {"foo": "V1"}, {"foo": test_enum},
+                                                 self.type_registry))
+        self.assertTrue(test_enum.validate_input(qm.Variable("foo"), {"foo": "V2"}, {"foo": test_enum},
+                                                 self.type_registry))
+        self.assertTrue(test_enum.validate_input(qm.Variable("foo"), {"foo": None}, {"foo": test_enum},
+                                                 self.type_registry))
+        self.assertTrue(test_enum.validate_input(qm.Variable("foo"), {}, {"foo": test_enum},
+                                                 self.type_registry))
+        self.assertFalse(test_enum.validate_input(qm.Variable("foo"), {"foo": "V3"}, {"foo": test_enum},
+                                                  self.type_registry))
+        self.assertFalse(test_enum.validate_input(qm.Variable("foo"), {"foo": 1.1}, {"foo": test_enum},
+                                                  self.type_registry))
 
 
 class InputObjectTest(TypesTest):
@@ -360,28 +379,28 @@ class InputObjectTest(TypesTest):
             "i": qm.NullValue(),
             "w1": qm.FloatValue(1.1),
             "w2": qm.ConstObjectValue({"foo": qm.FloatValue(1.1)})
-        }), {}, self.type_registry))
+        }), {}, {}, self.type_registry))
         self.assertFalse(io.validate_input(qm.ConstObjectValue({
             "i": qm.NullValue(),
             "w1": qm.FloatValue(1.1),
             "w2": qm.ConstObjectValue({"foo": qm.FloatValue(1.1)}),
             "foo": qm.NullValue()
-        }), {}, self.type_registry))
-        self.assertFalse(io.validate_input(qm.ConstListValue([]), {}, self.type_registry))
+        }), {}, {}, self.type_registry))
+        self.assertFalse(io.validate_input(qm.ConstListValue([]), {}, {}, self.type_registry))
 
-        self.assertTrue(io.validate_input(qm.Variable("foo"), {}, self.type_registry))
+        self.assertTrue(io.validate_input(qm.Variable("foo"), {}, {"foo": io}, self.type_registry))
         self.assertTrue(io.validate_input(qm.Variable("foo"), {"foo": {"i": None, "w1": 1.1, "w2": {"foo": 1.1}}},
-                                          self.type_registry))
+                                          {"foo": io}, self.type_registry))
         self.assertTrue(io.validate_input(qm.ObjectValue({
             "i": qm.NullValue(),
             "w1": qm.FloatValue(1.1),
             "w2": qm.Variable("foo")
-        }), {"foo": {"foo": 1.1}}, self.type_registry))
+        }), {"foo": {"foo": 1.1}}, {"foo": gt.NonNull("TestInputObject")}, self.type_registry))
         self.assertFalse(io.validate_input(qm.ObjectValue({
             "i": qm.NullValue(),
             "w1": qm.FloatValue(1.1),
             "w2": qm.Variable("foo")
-        }), {"foo": 1.1}, self.type_registry))
+        }), {"foo": 1.1}, {"foo": gt.NonNull("TestInputObject")}, self.type_registry))
 
 
 class ObjectTest(TypesTest):
@@ -441,8 +460,8 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNone(gt.is_scalar(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNone(gt.is_scalar(gt.NonNull(gt.Int)))
         self.assertIsNone(gt.is_scalar(gt.List(gt.Int)))
-        self.assertIsNone(gt.is_scalar(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNone(gt.is_scalar(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNone(gt.is_scalar(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNone(gt.is_scalar(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNone(gt.is_scalar(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNone(gt.is_scalar(gt.InputObject("Foo", {"foo": gt.Int})))
 
@@ -460,8 +479,8 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNone(gt.is_wrapper(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNotNone(gt.is_wrapper(gt.NonNull(gt.Int)))
         self.assertIsNotNone(gt.is_wrapper(gt.List(gt.Int)))
-        self.assertIsNone(gt.is_wrapper(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNone(gt.is_wrapper(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNone(gt.is_wrapper(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNone(gt.is_wrapper(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNone(gt.is_wrapper(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNone(gt.is_wrapper(gt.InputObject("Foo", {"foo": gt.Int})))
 
@@ -479,8 +498,8 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNotNone(gt.is_non_wrapper(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNone(gt.is_non_wrapper(gt.NonNull(gt.Int)))
         self.assertIsNone(gt.is_non_wrapper(gt.List(gt.Int)))
-        self.assertIsNotNone(gt.is_non_wrapper(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNotNone(gt.is_non_wrapper(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNotNone(gt.is_non_wrapper(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNotNone(gt.is_non_wrapper(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNotNone(gt.is_non_wrapper(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNotNone(gt.is_non_wrapper(gt.InputObject("Foo", {"foo": gt.Int})))
 
@@ -498,15 +517,15 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNone(gt.is_spreadable(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNone(gt.is_spreadable(gt.NonNull(gt.Int)))
         self.assertIsNone(gt.is_spreadable(gt.List(gt.Int)))
-        self.assertIsNotNone(gt.is_spreadable(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNotNone(gt.is_spreadable(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNotNone(gt.is_spreadable(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNotNone(gt.is_spreadable(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNotNone(gt.is_spreadable(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNone(gt.is_spreadable(gt.InputObject("Foo", {"foo": gt.Int})))
 
         with self.assertRaises(RuntimeError) as m:
             gt.assert_spreadable(gt.Enum("Foo", {"V1", "V2"}))
         self.assertEqual("Spreadable expected here", str(m.exception))
-        gt.assert_spreadable(gt.Interface("Foo", {"foo": gt.Int}))
+        gt.assert_spreadable(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})}))
 
     def test_selectable(self):
         self.assertIsNone(gt.is_selectable(gt.Boolean))
@@ -517,15 +536,15 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNone(gt.is_selectable(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNone(gt.is_selectable(gt.NonNull(gt.Int)))
         self.assertIsNone(gt.is_selectable(gt.List(gt.Int)))
-        self.assertIsNotNone(gt.is_selectable(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNotNone(gt.is_selectable(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNotNone(gt.is_selectable(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNotNone(gt.is_selectable(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNone(gt.is_selectable(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNone(gt.is_selectable(gt.InputObject("Foo", {"foo": gt.Int})))
 
         with self.assertRaises(RuntimeError) as m:
             gt.assert_selectable(gt.Enum("Foo", {"V1", "V2"}))
         self.assertEqual("Selectable expected here", str(m.exception))
-        gt.assert_selectable(gt.Interface("Foo", {"foo": gt.Int}))
+        gt.assert_selectable(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})}))
 
     def test_input(self):
         self.assertIsNotNone(gt.is_input(gt.Boolean))
@@ -536,8 +555,8 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNotNone(gt.is_input(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNone(gt.is_input(gt.NonNull(gt.Int)))
         self.assertIsNone(gt.is_input(gt.List(gt.Int)))
-        self.assertIsNone(gt.is_input(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNone(gt.is_input(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNone(gt.is_input(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNone(gt.is_input(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNone(gt.is_input(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNotNone(gt.is_input(gt.InputObject("Foo", {"foo": gt.Int})))
 
@@ -555,8 +574,8 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNotNone(gt.is_output(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNone(gt.is_output(gt.NonNull(gt.Int)))
         self.assertIsNone(gt.is_output(gt.List(gt.Int)))
-        self.assertIsNotNone(gt.is_output(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNotNone(gt.is_output(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNotNone(gt.is_output(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNotNone(gt.is_output(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNotNone(gt.is_output(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNone(gt.is_output(gt.InputObject("Foo", {"foo": gt.Int})))
 
@@ -574,8 +593,8 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNotNone(gt.is_user(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNone(gt.is_user(gt.NonNull(gt.Int)))
         self.assertIsNone(gt.is_user(gt.List(gt.Int)))
-        self.assertIsNotNone(gt.is_user(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNotNone(gt.is_user(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNotNone(gt.is_user(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNotNone(gt.is_user(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNotNone(gt.is_user(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNotNone(gt.is_user(gt.InputObject("Foo", {"foo": gt.Int})))
 
@@ -593,13 +612,13 @@ class TypeClassificationTest(TypesTest):
         self.assertIsNone(gt.is_inline(gt.Enum("Foo", {"V1", "V2"})))
         self.assertIsNotNone(gt.is_inline(gt.NonNull(gt.Int)))
         self.assertIsNotNone(gt.is_inline(gt.List(gt.Int)))
-        self.assertIsNone(gt.is_inline(gt.Interface("Foo", {"foo": gt.Int})))
-        self.assertIsNone(gt.is_inline(gt.Object("Foo", {"foo": gt.Int}, set())))
+        self.assertIsNone(gt.is_inline(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})})))
+        self.assertIsNone(gt.is_inline(gt.Object("Foo", {"foo": gt.Field(gt.Int, {})}, set())))
         self.assertIsNone(gt.is_inline(gt.Union("Foo", {"O1", "O2"})))
         self.assertIsNone(gt.is_inline(gt.InputObject("Foo", {"foo": gt.Int})))
 
         with self.assertRaises(RuntimeError) as m:
-            gt.assert_inline(gt.Interface("Foo", {"foo": gt.Int}))
+            gt.assert_inline(gt.Interface("Foo", {"foo": gt.Field(gt.Int, {})}))
         self.assertEqual("Inline type expected expected here", str(m.exception))
         gt.assert_inline(gt.Boolean)
 

@@ -32,7 +32,7 @@ class ExecutorTest(unittest.TestCase):
             "{foo}"
         )
 
-    def test_select_with_rguments(self):
+    def test_select_with_arguments(self):
         class FooResolver:
             type = "Foo"
 

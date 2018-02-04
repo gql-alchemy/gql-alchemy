@@ -51,30 +51,35 @@ class Executor:
 
 class _OperationRunner:
     def __init__(self, type_registry: gt.TypeRegistry,
-                 variables: t.Mapping[str, PrimitiveType]) -> None:
+                 vars_values: t.Mapping[str, PrimitiveType]) -> None:
         self.type_registry = type_registry
-        self.variables = dict(variables)
+        self.vars_values = dict(vars_values)
+        self.vars_defs: t.Dict[str, gt.GqlType] = {}
 
     def run_operation(self, root_object: gt.Object, operation: qm.Operation,
                       root_resolver: t.Any) -> t.Mapping[str, PrimitiveType]:
         for var in operation.variables:
             var_type = self.__resolve_type(self.__to_schema_type(var.type))
 
+            self.vars_defs[var.name] = var_type
+
             if var.default is not None:
                 var_type_wrapper = gt.is_wrapper(var_type)
 
                 if var_type_wrapper is not None:
-                    if not var_type_wrapper.validate_input(var.default, self.variables, self.type_registry):
+                    if not var_type_wrapper.validate_input(var.default, self.vars_values, self.vars_defs,
+                                                           self.type_registry):
                         raise GqlExecutionQueryError("default is not assignable to type")
                 else:
                     var_type_input = gt.assert_input(var_type)
-                    if not var_type_input.validate_input(var.default, self.variables, self.type_registry):
+                    if not var_type_input.validate_input(var.default, self.vars_values, self.vars_defs,
+                                                         self.type_registry):
                         raise GqlExecutionQueryError("default is not assignable to type")
 
-            if var.name not in self.variables:
-                self.variables[var.name] = var.default.to_primitive() if var.default is not None else None
+            if var.name not in self.vars_values:
+                self.vars_values[var.name] = var.default.to_primitive() if var.default is not None else None
 
-            if not var_type.is_assignable(self.variables[var.name], self.type_registry):
+            if not var_type.is_assignable(self.vars_values[var.name], self.type_registry):
                 raise GqlExecutionQueryError("Wrong value for variable type")
         # todo(rlz): apply directives
         return self.__select(operation.selections, root_object, root_resolver)
@@ -196,12 +201,12 @@ class _OperationRunner:
 
             if arg_sel is not None:
                 arg_value = arg_sel.value
-                if not arg_def.validate_input(arg_value, self.variables, self.type_registry):
+                if not arg_def.validate_input(arg_value, self.vars_values, self.vars_defs, self.type_registry):
                     raise GqlExecutionQueryError()
-                arguments[arg_name] = arg_value.to_py_value(self.variables)
+                arguments[arg_name] = arg_value.to_py_value(self.vars_values)
 
             elif arg_def.default is None:
-                if not arg_def.validate_input(qm.NullValue(), self.variables, self.type_registry):
+                if not arg_def.validate_input(qm.NullValue(), self.vars_values, self.vars_defs, self.type_registry):
                     raise GqlExecutionQueryError()
                 arguments[arg_name] = None
 
