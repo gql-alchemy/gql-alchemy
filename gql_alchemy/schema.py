@@ -392,3 +392,8 @@ def _format_args(args: t.Optional[t.Mapping[str, InputValue]]) -> str:
     parts.append(")")
 
     return "".join(parts)
+
+
+__all__ = ["Boolean", "Int", "Float", "String", "ID", "NonNull", "List", "EnumValue", "Enum", "InputValue",
+           "Field", "Object", "Interface", "Union", "IoField", "InputObject", "DirectiveLocations", "Directive",
+           "Schema"]

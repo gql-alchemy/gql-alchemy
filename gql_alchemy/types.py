@@ -907,3 +907,12 @@ class TypeRegistry:
                     )
                 )
         self.__validate_fields(obj)
+
+
+__all__ = ["TypeResolvingError", "GqlType", "List", "NonNull", "Argument", "Field", "Boolean", "Int", "Float",
+           "String", "ID", "Enum", "Interface", "InputObject", "Object", "Union", "ScalarType", "is_scalar",
+           "assert_scalar", "WrapperType", "is_wrapper", "assert_wrapper", "NonWrapperType", "is_non_wrapper",
+           "assert_non_wrapper", "SpreadableType", "is_spreadable", "assert_spreadable", "SelectableType",
+           "is_selectable", "assert_selectable", "InputType", "is_input", "assert_input", "OutputType",
+           "is_output", "assert_output", "UserType", "is_user", "assert_user", "InlineType", "is_inline",
+           "assert_inline", "DirectiveLocation", "DirectiveLocations", "Directive", "TypeRegistry"]
