@@ -40,10 +40,10 @@ class QueryVisitor:
     def visit_fragment_end(self, fragment: 'Fragment') -> None:
         pass
 
-    def visit_field_selection_begin(self, sel: 'FieldSelection') -> None:
+    def visit_field_selection_begin(self, field_sel: 'FieldSelection') -> None:
         pass
 
-    def visit_field_selection_end(self, sel: 'FieldSelection') -> None:
+    def visit_field_selection_end(self, field_sel: 'FieldSelection') -> None:
         pass
 
     def visit_fragment_spread_begin(self, spread: 'FragmentSpread') -> None:

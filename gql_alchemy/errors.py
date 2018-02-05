@@ -50,4 +50,5 @@ class GqlExecutionResolverError(GqlError):
     pass
 
 
-__all__ = ["GqlError", "GqlParsingError", "GqlSchemaError", "GqlExecutionQueryError", "GqlExecutionResolverError"]
+__all__ = ["GqlError", "GqlParsingError", "GqlSchemaError", "GqlExecutionQueryError", "GqlExecutionResolverError",
+           "GqlValidationError"]
