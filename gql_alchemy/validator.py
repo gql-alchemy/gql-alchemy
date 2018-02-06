@@ -307,9 +307,12 @@ class PassThree(Validator):
         super().visit_field_selection_begin(field_sel)
 
         if len(field_sel.selections) > 0:
-            field_def = self._spreadables[-2].fields(self.type_registry)[field_sel.name]
+            parent_spreadable = self._spreadables[-2]
         else:
-            field_def = self._spreadables[-1].fields(self.type_registry)[field_sel.name]
+            parent_spreadable = self._spreadables[-1]
+
+        parent_selectable = gt.assert_selectable(parent_spreadable)
+        field_def = parent_selectable.fields(self.type_registry)[field_sel.name]
 
         self.__validate_args(field_sel.arguments, field_def.args)
         self.__args_defs = field_def.args
