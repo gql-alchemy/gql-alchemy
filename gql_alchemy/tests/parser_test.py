@@ -114,8 +114,9 @@ class DocumentParserTest(ParsingTest):
     def test_fragment(self) -> None:
         self.assertDocument(
             '{"@doc": null, '
-            '"fragments": [{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}]}',
-            "fragment foo on Bar { id }"
+            '"fragments": [{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}], '
+            '"operations": [{"@q": null, "selections": [{"@frg-spread": "foo"}]}]}',
+            "{... foo} fragment foo on Bar { id }"
         )
         self.assertDocumentError(2, "{foo} fragment foo on Foo {foo}\nfragment foo on Foo {bar}")
 
@@ -127,10 +128,10 @@ class DocumentParserTest(ParsingTest):
             '{"@q": "q1", "selections": [{"@f": "id"}]}, '
             '{"@q": "q2", "selections": [{"@f": "id"}]}, '
             '{"@q": "q3", "selections": [{"@f": "id"}]}, '
-            '{"@m": "m1", "selections": [{"@f": "id"}]}, '
+            '{"@m": "m1", "selections": [{"@frg-spread": "foo"}, {"@frg-spread": "foo1"}]}, '
             '{"@m": "m2", "selections": [{"@f": "id"}]}]}',
             "query q1 {id} query q2 {id} query q3 {id}"
-            "mutation m1 {id} mutation m2 {id}"
+            "mutation m1 {... foo ...foo1} mutation m2 {id}"
             "fragment foo on Bar {id} fragment foo1 on Bar {id}"
         )
         self.assertDocument(
@@ -141,10 +142,10 @@ class DocumentParserTest(ParsingTest):
             '{"@m": "m1", "selections": [{"@f": "id"}]}, '
             '{"@q": "q2", "selections": [{"@f": "id"}]}, '
             '{"@m": "m2", "selections": [{"@f": "id"}]}, '
-            '{"@q": "q3", "selections": [{"@f": "id"}]}]}',
+            '{"@q": "q3", "selections": [{"@frg-spread": "foo"}, {"@frg-spread": "foo1"}]}]}',
             "query q1 {id} mutation m1 {id} query q2 {id}"
             "mutation m2 {id} fragment foo on Bar {id}"
-            "query q3 {id} fragment foo1 on Bar {id}"
+            "query q3 {...foo...foo1} fragment foo1 on Bar {id}"
         )
         self.assertDocumentError(2, "query foo { foo }\nmutation foo {bar}")
 
@@ -786,6 +787,11 @@ class FragmentParserTest(ParsingTest):
 
 
 class ValidationTest(ParsingTest):
+    def assertValidationError(self, msg: str, document: str):
+        with self.assertRaises(e.GqlParsingError) as m:
+            parse_document(document)
+        self.assertEqual(msg, str(m.exception))
+
     def init_parser(self) -> ElementParser:
         raise NotImplementedError()
 
@@ -794,17 +800,83 @@ class ValidationTest(ParsingTest):
 
     def test_fragment_validation(self) -> None:
         parse_document("{ ... foo } fragment foo on Foo { bar }")
-        self.assertDocumentError(None, "{ ... foo } fragment bar on Foo { bar }")
+        self.assertValidationError(
+            "Undefined fragment `foo` used in `!non-named` operation",
+            "{ ... foo } fragment bar on Foo { bar }"
+        )
 
     def test_variables_validation(self) -> None:
         parse_document(
             "query ($foo: Int, $bar: Float){ ... foo bar(a: $bar) } fragment foo on Foo { bar(a: $foo, b: $bar) }"
         )
-        self.assertDocumentError(
-            None,
+        self.assertValidationError(
+            "Undefined variable `baz` used in `foo` fragment when called from `!non-named` operation",
             "query ($foo: Int, $bar: Float){ ... foo bar(a: $bar) } fragment foo on Foo { bar(a: $foo, b: $baz) }"
         )
-        self.assertDocumentError(
-            None,
+        self.assertValidationError(
+            "Undefined variable `baz` used in `!non-named` operation",
             "query ($foo: Int, $bar: Float){ ... foo bar(a: $baz) } fragment foo on Foo { bar(a: $foo, b: $bar) }"
+        )
+        self.assertValidationError(
+            "Undefined variable `baz` used in `bar` fragment when called from `!non-named` operation",
+            "query ($foo: Int, $bar: Float){ ... foo } "
+            "fragment foo on Foo { ...bar } "
+            "fragment bar on Foo { foo(a: $baz) }"
+        )
+        self.assertValidationError(
+            "Undefined variable `baz` used in `bar`, `foo` fragments when called from `!non-named` operation",
+            "query ($foo: Int, $bar: Float){ ... foo } "
+            "fragment foo on Foo { ...bar abc(s: $baz) } "
+            "fragment bar on Foo { foo(a: $baz) }"
+        )
+        self.assertValidationError(
+            "Undefined variable `baz` used in `bar` fragment when called from `!non-named` operation",
+            "query ($foo: Int, $bar: Float){ ... foo ...bar } "
+            "fragment foo on Foo { ...bar } "
+            "fragment bar on Foo { foo(a: $baz) }"
+        )
+
+    def test_unused_fragments(self):
+        parse_document(
+            "query ($foo: Int, $bar: Float){ ...foo } "
+            "fragment foo on Foo { ...bar } "
+            "fragment bar on Foo { foo(a: $foo) }"
+        )
+        self.assertValidationError(
+            "Unused fragments detected: `bar`, `foo`",
+            "query ($foo: Int, $bar: Float){ foo } "
+            "fragment foo on Foo { ...bar } "
+            "fragment bar on Foo { foo(a: $foo) }"
+        )
+        self.assertValidationError(
+            "Unused fragments detected: `foo`",
+            "query ($foo: Int, $bar: Float){ ...bar } "
+            "fragment foo on Foo { ...bar } "
+            "fragment bar on Foo { foo(a: $foo) }"
+        )
+
+    def test_detecting_fragment_cycles(self):
+        parse_document(
+            "query ($foo: Int, $bar: Float){ ...foo ...bar } "
+            "fragment foo on Foo { ...abc } "
+            "fragment bar on Foo { ...abc ...foo }"
+            "fragment abc on Foo { foo }"
+        )
+        self.assertValidationError(
+            "Cycled fragment usage detected for `foo` fragment",
+            "query ($foo: Int, $bar: Float){ ...foo } "
+            "fragment foo on Foo { ...foo } "
+        )
+        self.assertValidationError(
+            "Cycled fragment usage detected for `bar` fragment",
+            "query { ...foo } "
+            "fragment foo on Foo { ...bar } "
+            "fragment bar on Foo { ...foo }"
+        )
+        self.assertValidationError(
+            "Cycled fragment usage detected for `bar` fragment",
+            "query ($foo: Int, $bar: Float){ ...foo ...bar } "
+            "fragment foo on Foo { ...abc } "
+            "fragment bar on Foo { ...abc ...foo ...bar }"
+            "fragment abc on Foo { foo }"
         )
