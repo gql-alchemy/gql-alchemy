@@ -336,7 +336,7 @@ class DocumentParser(ElementParser):
         if self.selection_allowed and ch == "{":
             self.selection_allowed = False
             self.query_allowed = False
-            return SelectionsParser(self.selections), 0
+            return SelectionsParser(self.selections, None), 0
 
         if ch == "m":
             return OperationParser("mutation", self.operations), 0
@@ -432,7 +432,7 @@ class OperationParser(ElementParser):
 
     def next_selections(self) -> t.Tuple[ElementParser, int]:
         self.expected.clear()
-        return SelectionsParser(self.selections), 0
+        return SelectionsParser(self.selections, None), 0
 
     def to_dbg_repr(self) -> PrimitiveType:
         d: t.Dict[str, PrimitiveType] = {
@@ -646,8 +646,9 @@ class ArgumentParser(ElementParser):
 class SelectionsParser(ElementParser):
     DETECT_FRAGMENT_SPREAD_RE = re.compile(r'[.]{3}[ \t]*([_A-Za-z][_0-9A-Za-z]*)')
 
-    def __init__(self, selections: t.List[qm.Selection]) -> None:
+    def __init__(self, selections: t.List[qm.Selection], selected_aliases: t.Optional[t.MutableSet[str]]) -> None:
         self.selections = selections
+        self.selected_aliases: t.MutableSet[str] = selected_aliases if selected_aliases is not None else set()
 
     def consume(self, reader: Reader) -> None:
         self.assert_ch(reader, "{")
@@ -664,14 +665,15 @@ class SelectionsParser(ElementParser):
             m = reader.match_re(self.DETECT_FRAGMENT_SPREAD_RE)
             if m is not None and m.group(1) != "on":
                 return FragmentSpreadParser(self.selections), 0
-            return InlineFragmentParser(self.selections), 0
+            return InlineFragmentParser(self.selections, self.selected_aliases), 0
 
-        return FieldParser(self.selections), 0
+        return FieldParser(self.selections, self.selected_aliases), 0
 
 
 class FieldParser(ElementParser):
-    def __init__(self, selections: t.List[qm.Selection]) -> None:
+    def __init__(self, selections: t.List[qm.Selection], selected_aliases: t.MutableSet[str]) -> None:
         self.parent_selections = selections
+        self.selected_aliases = selected_aliases
 
         self.alias: t.Optional[str] = None
         self.name: t.Optional[str] = None
@@ -687,6 +689,10 @@ class FieldParser(ElementParser):
 
     def consume(self, reader: Reader) -> None:
         name = self.read_name(reader)
+
+        if name in self.selected_aliases:
+            raise GqlParsingError("Selection under `{}` alias already defined", reader)
+        self.selected_aliases.add(name)
 
         if self.read_if(reader, ":"):
             self.alias = name
@@ -720,7 +726,7 @@ class FieldParser(ElementParser):
 
     def next_selections(self) -> t.Tuple[ElementParser, int]:
         self.can_be.clear()
-        return SelectionsParser(self.selections), 0
+        return SelectionsParser(self.selections, None), 0
 
     def to_dbg_repr(self) -> PrimitiveType:
         d = t.cast(t.Dict[str, PrimitiveType], super().to_dbg_repr())
@@ -1065,8 +1071,9 @@ class FragmentSpreadParser(ElementParser):
 class InlineFragmentParser(ElementParser):
     on_type: t.Optional[qm.NamedType]
 
-    def __init__(self, selections: t.List[qm.Selection]) -> None:
+    def __init__(self, selections: t.List[qm.Selection], selected_aliases: t.MutableSet[str]) -> None:
         self.parent_selections = selections
+        self.selected_aliases = selected_aliases
 
         self.on_type: t.Optional[qm.NamedType] = None
         self.directives: t.List[qm.Directive] = []
@@ -1091,7 +1098,7 @@ class InlineFragmentParser(ElementParser):
         if not self.selections_parsed:
             self.directives_parsed = True
             self.selections_parsed = True
-            return SelectionsParser(self.selections), 0
+            return SelectionsParser(self.selections, self.selected_aliases), 0
 
         self.parent_selections.append(qm.InlineFragment(self.on_type, self.directives, self.selections))
         return None, 1
@@ -1145,7 +1152,7 @@ class FragmentParser(ElementParser):
         if not self.selections_parsed:
             self.directives_parsed = True
             self.selections_parsed = True
-            return SelectionsParser(self.selections), 0
+            return SelectionsParser(self.selections, None), 0
 
         if self.name is None or self.on_type is None:
             raise RuntimeError("Unexpected `None`")

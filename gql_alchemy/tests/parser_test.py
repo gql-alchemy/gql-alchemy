@@ -181,6 +181,7 @@ class DocumentParserTest(ParsingTest):
         self.assertDocumentError(1, "sfs")
         self.assertDocumentError(1, "query{id} fds")
         self.assertDocumentError(1, "a query{id}")
+        self.assertDocumentError(1, "{foo ... { foo }}")
 
 
 class QueryOperationParserTest(ParsingTest):
@@ -421,7 +422,7 @@ class ArgumentsParserTest(ParsingTest):
 class SelectionsParserTest(ParsingTest):
     def init_parser(self) -> ElementParser:
         self.selections: t.List[qm.Selection] = []
-        return SelectionsParser(self.selections)
+        return SelectionsParser(self.selections, None)
 
     def get_result(self) -> t.Sequence[qm.GraphQlModelType]:
         return self.selections
@@ -488,7 +489,7 @@ class SelectionsParserTest(ParsingTest):
 class FieldParserTest(ParsingTest):
     def init_parser(self) -> ElementParser:
         self.fields: t.List[qm.Selection] = []
-        return FieldParser(self.fields)
+        return FieldParser(self.fields, set())
 
     def get_result(self) -> qm.GraphQlModelType:
         return self.fields[0]
@@ -728,7 +729,7 @@ class FragmentSpreadParserTest(ParsingTest):
 class InlineFragmentParserTest(ParsingTest):
     def init_parser(self) -> ElementParser:
         self.fields: t.List[qm.Selection] = []
-        return InlineFragmentParser(self.fields)
+        return InlineFragmentParser(self.fields, set())
 
     def get_result(self) -> qm.GraphQlModelType:
         return self.fields[0]
