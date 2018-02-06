@@ -19,8 +19,6 @@ class Executor:
               operation_name: t.Optional[str] = None) -> PrimitiveType:
         document = parse_document(query)
 
-        # todo(rlz): verify query against schema
-
         if operation_name is None and len(document.operations) > 1:
             raise GqlExecutionQueryError("Operation name is needed for queries with multiple operations defined")
 

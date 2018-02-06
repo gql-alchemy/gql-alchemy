@@ -60,10 +60,10 @@ class VerifyDocument(qm.QueryVisitor):
         self.__visit_operation_begin(mutation)
 
     def visit_query_end(self, query: qm.Query) -> None:
-        self.__visit_opration_end()
+        self.__visit_operation_end()
 
     def visit_mutation_end(self, query: qm.Mutation) -> None:
-        self.__visit_opration_end()
+        self.__visit_operation_end()
 
     def visit_variable(self, var: qm.Variable) -> None:
         if not self.__in_op:
@@ -90,7 +90,9 @@ class VerifyDocument(qm.QueryVisitor):
         self.__in_op = True
         self.__op_vars = {v.name for v in op.variables}
 
-    def __visit_opration_end(self) -> None:
+        # todo: verify selections are unique
+
+    def __visit_operation_end(self) -> None:
         self.__current_op_name = None
         self.__in_op = False
         self.__op_vars = set()
@@ -328,6 +330,9 @@ class OperationParser(ElementParser):
                 raise GqlParsingError("One of `name`, '(', '@' or '{' expected", reader)
             self.name = name
 
+        if self.name in {op.name for op in self.operations}:
+            raise GqlParsingError("Operation with the same name already exists", reader)
+
     def next(self, reader: Reader) -> t.Tuple[t.Optional[ElementParser], int]:
 
         if len(self.expected) == 0:
@@ -407,6 +412,9 @@ class VariableDefinitionParser(ElementParser):
         self.assert_ch(reader, "$")
 
         self.name = self.read_name(reader)
+
+        if self.name in {v.name for v in self.variables}:
+            raise GqlParsingError("Variable with the same name already defined", reader)
 
         self.assert_ch(reader, ":")
 
@@ -530,6 +538,9 @@ class ArgumentParser(ElementParser):
 
     def consume(self, reader: Reader) -> None:
         self.name = self.read_name(reader)
+
+        if self.name in {a.name for a in self.arguments}:
+            raise GqlParsingError("Argument with the same name already defined", reader)
 
         self.assert_ch(reader, ":")
 
@@ -1045,6 +1056,9 @@ class FragmentParser(ElementParser):
 
         if self.name == "on":
             raise GqlParsingError("Fragment can not have name \"on\"", reader)
+
+        if self.name in {f.name for f in self.fragments}:
+            raise GqlParsingError("Fragment with the same name already defined", reader)
 
         self.assert_literal(reader, "on")
 

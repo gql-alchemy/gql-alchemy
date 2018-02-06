@@ -4,7 +4,7 @@ from .utils import add_if_not_empty, add_if_not_none, PrimitiveType, PrimitiveSe
 
 
 class QueryVisitor:
-    def visit_document_start(self, document: 'Document') -> None:
+    def visit_document_begin(self, document: 'Document') -> None:
         pass
 
     def visit_document_end(self, document: 'Document') -> None:
@@ -112,7 +112,7 @@ class Document(GraphQlModelType):
         self.fragments = fragments
 
     def visit(self, visitor: QueryVisitor) -> None:
-        visitor.visit_document_start(self)
+        visitor.visit_document_begin(self)
 
         for op in self.operations:
             op.visit(visitor)

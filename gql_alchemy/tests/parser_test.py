@@ -85,16 +85,14 @@ class DocumentParserTest(ParsingTest):
 
         self.assertDocument(
             '{"@doc": null, "operations": ['
-            '{"@q": null, "selections": [{"@f": "id"}]}, '
-            '{"@m": null, "selections": [{"@f": "id"}]}]}',
-            "{id} mutation {id}"
+            '{"@q": null, "selections": [{"@f": "id"}]}]}',
+            "query {id}"
         )
 
         self.assertDocument(
             '{"@doc": null, "operations": ['
-            '{"@m": null, "selections": [{"@f": "id"}]}, '
-            '{"@q": null, "selections": [{"@f": "id"}]}]}',
-            "mutation {id} {id}"
+            '{"@m": null, "selections": [{"@f": "id"}]}]}',
+            "mutation {id}"
         )
 
         self.assertDocumentError(1, "{id} {id}")
@@ -119,34 +117,36 @@ class DocumentParserTest(ParsingTest):
             '"fragments": [{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}]}',
             "fragment foo on Bar { id }"
         )
+        self.assertDocumentError(2, "{foo} fragment foo on Foo {foo}\nfragment foo on Foo {bar}")
 
     def test_parse_many(self) -> None:
         self.assertDocument(
             '{"@doc": null, "fragments": ['
             '{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}, '
             '{"@frg": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}], "operations": ['
-            '{"@q": null, "selections": [{"@f": "id"}]}, '
-            '{"@q": null, "selections": [{"@f": "id"}]}, '
-            '{"@q": null, "selections": [{"@f": "id"}]}, '
-            '{"@m": null, "selections": [{"@f": "id"}]}, '
-            '{"@m": null, "selections": [{"@f": "id"}]}]}',
-            "query {id} query {id} query {id}"
-            "mutation {id} mutation {id}"
+            '{"@q": "q1", "selections": [{"@f": "id"}]}, '
+            '{"@q": "q2", "selections": [{"@f": "id"}]}, '
+            '{"@q": "q3", "selections": [{"@f": "id"}]}, '
+            '{"@m": "m1", "selections": [{"@f": "id"}]}, '
+            '{"@m": "m2", "selections": [{"@f": "id"}]}]}',
+            "query q1 {id} query q2 {id} query q3 {id}"
+            "mutation m1 {id} mutation m2 {id}"
             "fragment foo on Bar {id} fragment foo1 on Bar {id}"
         )
         self.assertDocument(
             '{"@doc": null, "fragments": ['
             '{"@frg": "foo", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}, '
             '{"@frg": "foo1", "on_type": {"@named": "Bar"}, "selections": [{"@f": "id"}]}], "operations": ['
-            '{"@q": null, "selections": [{"@f": "id"}]}, '
-            '{"@m": null, "selections": [{"@f": "id"}]}, '
-            '{"@q": null, "selections": [{"@f": "id"}]}, '
-            '{"@m": null, "selections": [{"@f": "id"}]}, '
-            '{"@q": null, "selections": [{"@f": "id"}]}]}',
-            "query {id} mutation {id} query {id}"
-            "mutation {id} fragment foo on Bar {id}"
-            "query {id} fragment foo1 on Bar {id}"
+            '{"@q": "q1", "selections": [{"@f": "id"}]}, '
+            '{"@m": "m1", "selections": [{"@f": "id"}]}, '
+            '{"@q": "q2", "selections": [{"@f": "id"}]}, '
+            '{"@m": "m2", "selections": [{"@f": "id"}]}, '
+            '{"@q": "q3", "selections": [{"@f": "id"}]}]}',
+            "query q1 {id} mutation m1 {id} query q2 {id}"
+            "mutation m2 {id} fragment foo on Bar {id}"
+            "query q3 {id} fragment foo1 on Bar {id}"
         )
+        self.assertDocumentError(2, "query foo { foo }\nmutation foo {bar}")
 
     def test_whitespaces(self) -> None:
         self.assertDocument(
@@ -342,6 +342,7 @@ class VariablesParserTest(ParsingTest):
         self.assertParserError(1, "(foo: Bar)")
         self.assertParserError(1, "($foo Bar)")
         self.assertParserError(1, "($foo Bar 3)")
+        self.assertParserError(1, "(foo: Int foo: Float)")
 
 
 class DirectivesParserTest(ParsingTest):
@@ -413,6 +414,7 @@ class ArgumentsParserTest(ParsingTest):
         self.assertParserError(1, "(id 3)")
         self.assertParserError(1, "(id:: 3)")
         self.assertParserError(1, "(id:)")
+        self.assertParserError(1, "(id: 3 id: 4)")
 
 
 class SelectionsParserTest(ParsingTest):
