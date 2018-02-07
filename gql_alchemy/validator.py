@@ -12,9 +12,11 @@ logger = logging.getLogger("gql_alchemy")
 
 
 class Env:
-    def __init__(self, vars_defs: t.Mapping[str, gt.GqlType],
+    def __init__(self, vars_definitions: t.Mapping[str, t.Union[gt.InputType, gt.WrapperType]],
+                 vars_defaults: t.Mapping[str, t.Optional[qm.ConstValue]],
                  vars_values: t.Optional[t.Mapping[str, PrimitiveType]]) -> None:
-        self.vars_defs = vars_defs
+        self.vars_definitions = vars_definitions
+        self.vars_defaults = vars_defaults
         self.vars_values = vars_values
 
 
@@ -256,15 +258,54 @@ class PassTwo(Validator):
         self.fragment_calls[spread.fragment_name].append(self.__root)
 
     def __save_env(self, op: qm.Operation) -> None:
-        vars_defs = {}
+        vars_definitions: t.Dict[str, t.Union[gt.InputType, gt.WrapperType]] = {}
+        vars_defaults: t.Dict[str, t.Optional[qm.ConstValue]] = {}
 
         for var in op.variables:
-            vars_defs[var.name] = self._resolve_type(var.type)
+            var_type = self._resolve_type(var.type)
+            var_type_input = gt.is_input(var_type)
+            if var_type_input is None:
+                var_type_wrapper = gt.is_wrapper(var_type)
+                if var_type_wrapper is None:
+                    raise GqlValidationError(
+                        "Only input types and their wrappers can be used as var types; "
+                        "var `{}` of `{}` operation is not input type".format(var.name, op.name)
+                    )
+                var_type_input = gt.is_input(self.type_registry.resolve_and_unwrap(var_type_wrapper))
+                if var_type_input is None:
+                    raise GqlValidationError(
+                        "Only input types and their wrappers can be used as var types; "
+                        "var `{}` of `{}` operation is not input type".format(var.name, op.name)
+                    )
+                vars_definitions[var.name] = var_type_wrapper
+            else:
+                vars_definitions[var.name] = var_type_input
+            vars_defaults[var.name] = var.default
 
         if self.__is_running(op):
-            env = Env(vars_defs, self.__vars_values)
+            env = Env(vars_definitions, vars_defaults, self.__vars_values)
         else:
-            env = Env(vars_defs, None)
+            env = Env(vars_definitions, vars_defaults, None)
+
+        for var_name, var_type in env.vars_definitions.items():
+            if env.vars_defaults[var_name] is not None and \
+                    not var_type.validate_input(env.vars_defaults[var_name], None, {}, self.type_registry):
+                raise GqlValidationError(
+                    "Variable can not be assigned to its default; "
+                    "problem with `{}` variable in `{}` operation".format(var_name, op.name)
+                )
+            if env.vars_values is not None:
+                if var_name in env.vars_values:
+                    if not var_type.is_assignable(env.vars_values[var_name], self.type_registry):
+                        raise GqlValidationError(
+                            "Wrong value {} provided for `{}` variable of `{}` operation".format(
+                                json.dumps(env.vars_values[var_name]), var_name, op.name
+                            )
+                        )
+                    elif env.vars_defaults[var_name] is None:
+                        raise GqlValidationError(
+                            "Variable `{}` is required in `{}` operation".format(var_name, op.name)
+                        )
 
         self.environments[op.name if op.name is not None else "!"] = env
 
@@ -337,7 +378,8 @@ class PassThree(Validator):
 
         for env in self.__current_envs:
             try:
-                if not arg_def.validate_input(argument.value, env.vars_values, env.vars_defs, self.type_registry):
+                if not arg_def.validate_input(argument.value, env.vars_values, env.vars_definitions,
+                                              self.type_registry):
                     raise GqlValidationError("Can not use `{}` as `{}` argument".format(
                         json.dumps(argument.value.to_primitive()),
                         argument.name
