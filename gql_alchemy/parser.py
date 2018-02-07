@@ -30,31 +30,50 @@ def log_position(reader: Reader) -> None:
         logger.debug(line)
 
 
-class CollectFragmentsVariables(qm.QueryVisitor):
+class VerifyDocument(qm.QueryVisitor):
     def __init__(self) -> None:
         self.__current_op_name: t.Optional[str] = None
         self.__current_fragment_name: t.Optional[str] = None
+        self.__declared_vars: t.Dict[str, t.MutableSet[str]] = {}
         self.__o2f_calls: t.Dict[str, t.MutableSet[str]] = {}
         self.__f2f_calls: t.Dict[str, t.MutableSet[str]] = {}
         self.__direct_fragments_variables: t.Dict[str, t.MutableSet[str]] = {}
-        self.fragments_variables: t.Dict[str, t.Dict[str, t.MutableSet[str]]] = {}  # fragment -> (var -> fragment)
+        self.__fragments_variables: t.Dict[str, t.Dict[str, t.MutableSet[str]]] = {}  # fragment -> (var -> fragment)
 
     def visit_query_begin(self, query: qm.Query) -> None:
         self.__current_op_name = query.name if query.name is not None else "!non-named"
         self.__o2f_calls[self.__current_op_name] = set()
+        self.__declared_vars[self.__current_op_name] = {v.name for v in query.variables}
+
+    def visit_query_end(self, query: qm.Query) -> None:
+        self.__current_op_name = None
 
     def visit_mutation_begin(self, mutation: qm.Mutation) -> None:
         self.__current_op_name = mutation.name if mutation.name is not None else "!non-named"
         self.__o2f_calls[self.__current_op_name] = set()
+        self.__declared_vars[self.__current_op_name] = {v.name for v in mutation.variables}
+
+    def visit_mutation_end(self, mutation: qm.Mutation) -> None:
+        self.__current_op_name = None
 
     def visit_fragment_begin(self, fragment: qm.Fragment) -> None:
         self.__direct_fragments_variables[fragment.name] = set()
         self.__f2f_calls[fragment.name] = set()
         self.__current_fragment_name = fragment.name
 
+    def visit_fragment_end(self, fragment: qm.Fragment) -> None:
+        self.__current_fragment_name = None
+
     def visit_variable(self, var: qm.Variable) -> None:
-        if self.__current_fragment_name is None:
+        if self.__current_op_name is not None:
+            if var.name not in self.__declared_vars[self.__current_op_name]:
+                raise GqlParsingError("Undefined variable `{}` used in `{}` operation".format(
+                    var.name, self.__current_op_name
+                ))
             return
+
+        if self.__current_fragment_name is None:
+            raise RuntimeError("Operation or fragment name expected here")
 
         self.__direct_fragments_variables[self.__current_fragment_name].add(var.name)
 
@@ -73,10 +92,12 @@ class CollectFragmentsVariables(qm.QueryVisitor):
                 if fr not in self.__f2f_calls:
                     raise GqlParsingError("Undefined fragment `{}` used in `{}` operation".format(fr, op))
 
-                if fr not in self.fragments_variables:
+                if fr not in self.__fragments_variables:
                     self.__check_cycles_and_collect_variables(fr, set())
 
-        called_from_ops = set(self.fragments_variables.keys())
+                self.__verify_fragment_vars(op, fr)
+
+        called_from_ops = set(self.__fragments_variables.keys())
         defined = set(self.__direct_fragments_variables.keys())
         unused = list(defined.difference(called_from_ops))
         unused.sort()
@@ -86,64 +107,32 @@ class CollectFragmentsVariables(qm.QueryVisitor):
             ))
 
     def __check_cycles_and_collect_variables(self, fr: str, visited: t.MutableSet[str]) -> None:
-        if fr in self.fragments_variables:
+        if fr in self.__fragments_variables:
             return
 
         visited.add(fr)
 
-        self.fragments_variables[fr] = {}
+        self.__fragments_variables[fr] = {}
         for var in self.__direct_fragments_variables[fr]:
-            self.fragments_variables[fr][var] = set()
-            self.fragments_variables[fr][var].add(fr)
+            self.__fragments_variables[fr][var] = set()
+            self.__fragments_variables[fr][var].add(fr)
 
         for called_fr in self.__f2f_calls[fr]:
             if called_fr in visited:
                 raise GqlParsingError("Cycled fragment usage detected for `{}` fragment".format(fr))
             self.__check_cycles_and_collect_variables(called_fr, visited)
-            for var, used_in in self.fragments_variables[called_fr].items():
-                if var not in self.fragments_variables[fr]:
-                    self.fragments_variables[fr][var] = set()
+            for var, used_in in self.__fragments_variables[called_fr].items():
+                if var not in self.__fragments_variables[fr]:
+                    self.__fragments_variables[fr][var] = set()
                 for user_in_fr in used_in:
-                    self.fragments_variables[fr][var].add(user_in_fr)
+                    self.__fragments_variables[fr][var].add(user_in_fr)
 
         visited.remove(fr)
 
-
-class VerifyDocument(qm.QueryVisitor):
-    def __init__(self, fragments_variables: t.Dict[str, t.Dict[str, t.MutableSet[str]]]) -> None:
-        self.__fragments_variables = fragments_variables
-        self.__current_op_name: t.Optional[str] = None
-        self.__in_op = False
-        self.__op_vars: t.MutableSet[str] = set()
-
-    def visit_query_begin(self, query: qm.Query) -> None:
-        self.__visit_operation_begin(query)
-
-    def visit_mutation_begin(self, mutation: qm.Mutation) -> None:
-        self.__visit_operation_begin(mutation)
-
-    def visit_query_end(self, query: qm.Query) -> None:
-        self.__visit_operation_end()
-
-    def visit_mutation_end(self, query: qm.Mutation) -> None:
-        self.__visit_operation_end()
-
-    def visit_variable(self, var: qm.Variable) -> None:
-        if not self.__in_op:
-            return
-
-        if var.name not in self.__op_vars:
-            raise GqlParsingError("Undefined variable `{}` used in `{}` operation".format(
-                var.name, self.__current_op_name
-            ))
-
-    def visit_fragment_spread_begin(self, spread: qm.FragmentSpread) -> None:
-        if not self.__in_op:
-            return
-
-        fragment_variables = self.__fragments_variables[spread.fragment_name]
+    def __verify_fragment_vars(self, op_name: str, fragment_name: str) -> None:
+        fragment_variables = self.__fragments_variables[fragment_name]
         for var, used_in in fragment_variables.items():
-            if var not in self.__op_vars:
+            if var not in self.__declared_vars[op_name]:
                 if len(used_in) == 1:
                     used_in_str = "`{}` fragment".format(next(iter(used_in)))
                 else:
@@ -152,21 +141,9 @@ class VerifyDocument(qm.QueryVisitor):
                     used_in_str = "{} fragments".format(", ".join(('`' + i + '`' for i in used_in_list)))
                 raise GqlParsingError(
                     "Undefined variable `{}` used in {} when called from `{}` operation".format(
-                        var, used_in_str, self.__current_op_name
+                        var, used_in_str, op_name
                     )
                 )
-
-    def __visit_operation_begin(self, op: qm.Operation) -> None:
-        self.__current_op_name = op.name if op.name is not None else "!non-named"
-        self.__in_op = True
-        self.__op_vars = {v.name for v in op.variables}
-
-        # todo: verify selections are unique
-
-    def __visit_operation_end(self) -> None:
-        self.__current_op_name = None
-        self.__in_op = False
-        self.__op_vars = set()
 
 
 def parse_document(text_input: str) -> qm.Document:
@@ -355,10 +332,7 @@ class DocumentParser(ElementParser):
         raise GqlParsingError("One of top-level declaration expected", reader)
 
     def __verify_and_set_document(self, document: qm.Document) -> None:
-        c = CollectFragmentsVariables()
-        document.visit(c)
-
-        document.visit(VerifyDocument(c.fragments_variables))
+        document.visit(VerifyDocument())
 
         self.set_document(document)
 
