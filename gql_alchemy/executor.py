@@ -44,7 +44,7 @@ class Executor:
         validate(document, self.schema, variables, op_to_run)
 
         if op_to_run is None and len(document.operations) > 1:
-            raise RuntimeError("Operation name is needed for queries with multiple operations defined")
+            raise GqlExecutionError("Operation name is needed for queries with multiple operations defined")
 
         operation: t.Optional[qm.Operation] = None
         if op_to_run is None:
@@ -55,14 +55,14 @@ class Executor:
                     operation = op
 
         if operation is None:
-            raise RuntimeError("Operation `{}` is not found".format(op_to_run))
+            raise GqlExecutionError("Operation `{}` is not found".format(op_to_run))
 
         if isinstance(operation, qm.Query):
             root_object_name = self.query_object_name
             resolver = self.query_resolver
         else:
             if self.mutation_object_name is None or self.mutation_resolver is None:
-                raise RuntimeError("Server does not support mutations")
+                raise GqlExecutionError("Server does not support mutations")
             root_object_name = self.mutation_object_name
             resolver = self.mutation_resolver
 

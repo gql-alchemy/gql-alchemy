@@ -215,3 +215,152 @@ class ExecutorTest(unittest.TestCase):
             Query(),
             Mutation()
         )
+
+    def test_variables(self):
+        class Query(Resolver):
+            def foo(self, a, b):
+                return a + b
+
+        self.assertQueryResult(
+            '{"foo": 8}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.Field(s.Int, {"a": s.Int, "b": s.Int}),
+                })
+            ),
+            "query ($v: Int){ foo(a: 3, b: $v) }",
+            Query(),
+            variables={"v": 5}
+        )
+
+    def test_variables_with_default(self):
+        class Query(Resolver):
+            def foo(self, a, b):
+                return a + b
+
+        self.assertQueryResult(
+            '{"foo": 6}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.Field(s.Int, {"a": s.Int, "b": s.Int}),
+                })
+            ),
+            "query ($v1: Int, $v2: Int = 5){ foo(a: $v1, b: $v2) }",
+            Query(),
+            variables={"v1": 1}
+        )
+
+    def test_fragment_on_union(self):
+        class Foo(Resolver):
+            foo = "foo"
+
+        class Query(Resolver):
+            u = Foo()
+
+        self.assertQueryResult(
+            '{"u": {"foo": "foo"}}',
+            s.Schema(
+                [
+                    s.Object("Foo", {
+                        "foo": s.String
+                    }),
+                    s.Object("Bar", {
+                        "bar": s.String
+                    }),
+                    s.Union("FooOrBar", {"Foo", "Bar"})
+                ],
+                s.Object("Query", {
+                    "u": "FooOrBar"
+                })
+            ),
+            "{ u {...Foo} } fragment Foo on Foo { foo }",
+            Query()
+        )
+
+    def test_skip_fragment_on_union_if_types_not_match(self):
+        class Bar(Resolver):
+            bar = "bar"
+
+        class Query(Resolver):
+            u = Bar()
+
+        self.assertQueryResult(
+            '{"u": {}}',
+            s.Schema(
+                [
+                    s.Object("Foo", {
+                        "foo": s.String
+                    }),
+                    s.Object("Bar", {
+                        "bar": s.String
+                    }),
+                    s.Union("FooOrBar", {"Foo", "Bar"})
+                ],
+                s.Object("Query", {
+                    "u": "FooOrBar"
+                })
+            ),
+            "{ u {...Foo} } fragment Foo on Foo { foo }",
+            Query()
+        )
+
+    def test_return_none_for_plain_field(self):
+        class Query(Resolver):
+            foo = None
+
+        self.assertQueryResult(
+            '{"foo": null}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.Int
+                })
+            ),
+            "{ foo }",
+            Query()
+        )
+
+    def test_return_none_for_selectable_field(self):
+        class Query(Resolver):
+            foo = None
+
+        self.assertQueryResult(
+            '{"foo": null}',
+            s.Schema(
+                [
+                    s.Object("Foo", {"foo": s.Int})
+                ],
+                s.Object("Query", {
+                    "foo": "Foo"
+                })
+            ),
+            "{ foo { foo } }",
+            Query()
+        )
+
+    def test_fragment_on_interface(self):
+        class Foo(Resolver):
+            foo = "foo"
+
+        class Query(Resolver):
+            foo = Foo()
+
+        self.assertQueryResult(
+            '{"foo": {"foo": "foo"}}',
+            s.Schema(
+                [
+                    s.Interface("FooInt", {"foo": s.String}),
+                    s.Object("Foo", {}, {"FooInt"}),
+                ],
+                s.Object("Query", {
+                    "foo": "FooInt"
+                })
+            ),
+            "{ foo {...Foo} } fragment Foo on FooInt { foo }",
+            Query()
+        )
