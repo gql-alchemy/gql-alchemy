@@ -17,7 +17,7 @@ class ExecutorTest(unittest.TestCase):
 
     def test_select_scalar(self) -> None:
         class Resolver:
-            def foo(self, args: t.Mapping[str, PrimitiveType]) -> int:
+            def foo(self) -> int:
                 return 3
 
         self.assertQueryResult(
@@ -39,12 +39,12 @@ class ExecutorTest(unittest.TestCase):
             def __init__(self, foo: int) -> None:
                 self.__foo = foo
 
-            def bar(self, args: t.Mapping[str, PrimitiveType]) -> int:
-                return args["abc"] + self.__foo
+            def bar(self, abc: int) -> int:
+                return abc + self.__foo
 
         class Resolver:
-            def foo(self, args: t.Mapping[str, PrimitiveType]) -> FooResolver:
-                return FooResolver(args["foo"])
+            def foo(self, foo: int) -> FooResolver:
+                return FooResolver(foo)
 
         self.assertQueryResult(
             '{"foo": {"bar": 7}}',

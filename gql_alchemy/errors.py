@@ -40,15 +40,10 @@ class GqlSchemaError(GqlError):
     pass
 
 
-class GqlExecutionQueryError(GqlError):
+class GqlExecutionError(GqlError):
     """Errors during execution: response do not match schema"""
     pass
 
 
-class GqlExecutionResolverError(GqlError):
-    """Errors during execution: response do not match schema"""
-    pass
-
-
-__all__ = ["GqlError", "GqlParsingError", "GqlSchemaError", "GqlExecutionQueryError", "GqlExecutionResolverError",
+__all__ = ["GqlError", "GqlParsingError", "GqlSchemaError", "GqlExecutionError",
            "GqlValidationError"]

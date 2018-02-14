@@ -7,15 +7,18 @@ from gql_alchemy.parser import parse_document
 from gql_alchemy.utils import PrimitiveType
 from gql_alchemy.validator import validate, GqlValidationError
 
+# sh = logging.StreamHandler()
+# sh.setLevel(logging.DEBUG)
+#
+# logger = logging.getLogger("gql_alchemy")
+# logger.setLevel(logging.DEBUG)
+# logger.addHandler(sh)
+
 logger = logging.getLogger("gql_alchemy.validator_test")
 logger.setLevel(logging.DEBUG)
-sh = logging.StreamHandler()
-sh.setLevel(logging.DEBUG)
-logger.addHandler(sh)
 
-logger = logging.getLogger("gql_alchemy")
-logger.setLevel(logging.DEBUG)
-logger.addHandler(sh)
+
+# logger.addHandler(sh)
 
 
 class ValidatorTest(unittest.TestCase):
