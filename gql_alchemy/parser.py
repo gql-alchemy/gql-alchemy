@@ -273,7 +273,7 @@ class ElementParser:
         name = reader.read_re(NAME_RE)
 
         if name is None:
-            raise GqlParsingError("Name expected (forgot to finish selections by '}'?)", reader)
+            raise GqlParsingError("Name expected", reader)
 
         return name
 
