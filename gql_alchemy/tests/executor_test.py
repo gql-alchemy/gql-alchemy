@@ -3,7 +3,7 @@ import typing as t
 import unittest
 
 import gql_alchemy.schema as s
-from ..executor import Executor
+from ..executor import Executor, Resolver
 from ..utils import PrimitiveType
 
 
@@ -16,7 +16,10 @@ class ExecutorTest(unittest.TestCase):
         self.assertEqual(expected, json.dumps(result, sort_keys=True))
 
     def test_select_scalar(self) -> None:
-        class Resolver:
+        class QueryResolver(Resolver):
+            def __init__(self):
+                super().__init__("__Query")
+
             def foo(self) -> int:
                 return 3
 
@@ -28,21 +31,24 @@ class ExecutorTest(unittest.TestCase):
                     "foo": s.Int
                 })
             ),
-            Resolver(),
+            QueryResolver(),
             "{foo}"
         )
 
     def test_select_with_arguments(self) -> None:
-        class FooResolver:
-            type = "Foo"
-
+        class FooResolver(Resolver):
             def __init__(self, foo: int) -> None:
+                super().__init__("Foo")
+
                 self.__foo = foo
 
             def bar(self, abc: int) -> int:
                 return abc + self.__foo
 
-        class Resolver:
+        class QueryResolver(Resolver):
+            def __init__(self):
+                super().__init__("__Query")
+
             def foo(self, foo: int) -> FooResolver:
                 return FooResolver(foo)
 
@@ -56,6 +62,31 @@ class ExecutorTest(unittest.TestCase):
                     "foo": s.Field("Foo", {"foo": s.Int})
                 })
             ),
-            Resolver(),
+            QueryResolver(),
             "{foo(foo: 3){bar(abc: 4)}}"
+        )
+
+    def test_fragment_select(self):
+        class QueryResolver(Resolver):
+            def __init__(self):
+                super().__init__("Query")
+
+            def foo(self):
+                return "foo"
+
+            def bar(self):
+                return "bar"
+
+        self.assertQueryResult(
+            '{"bar": "bar", "foo": "foo"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String,
+                    "bar": s.String
+                })
+            ),
+            QueryResolver(),
+            "{ foo ...Bar} fragment Bar on Query { bar }"
         )

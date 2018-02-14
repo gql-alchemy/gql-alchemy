@@ -9,8 +9,11 @@ from .utils import PrimitiveType
 
 
 class Resolver:
-    def __init__(self, type: str):
+    def __init__(self, type: str) -> None:
         self.type = type
+
+
+SomeResolver = t.TypeVar('SomeResolver', bound=Resolver)
 
 
 class Executor:
@@ -45,7 +48,7 @@ class Executor:
                 raise RuntimeError("Server does not support mutations")
             root_object_name = self.mutation_object_name
 
-        return _OperationRunner(self.type_registry, variables).run_operation(
+        return _OperationRunner(self.type_registry, variables, document).run_operation(
             t.cast(gt.Object, self.type_registry.resolve_type(root_object_name)),
             operation,
             self.resolver
@@ -54,9 +57,11 @@ class Executor:
 
 class _OperationRunner:
     def __init__(self, type_registry: gt.TypeRegistry,
-                 vars_values: t.Mapping[str, PrimitiveType]) -> None:
+                 vars_values: t.Mapping[str, PrimitiveType],
+                 document: qm.Document) -> None:
         self.type_registry = type_registry
         self.vars_values = dict(vars_values)
+        self.fragments = dict(((f.name, f) for f in document.fragments))
 
     def run_operation(self, root_object: gt.Object, operation: qm.Operation,
                       root_resolver: t.Any) -> t.Mapping[str, PrimitiveType]:
@@ -70,18 +75,34 @@ class _OperationRunner:
         return result
 
     def __select(self, result: t.Dict[str, PrimitiveType], selections: t.Sequence[qm.Selection],
-                 spreadable: gt.SpreadableType,
+                 from_selectable: gt.SpreadableType,
                  resolver: t.Any) -> None:
         for sel in selections:
             if isinstance(sel, qm.FieldSelection):
-                selectable = gt.assert_selectable(spreadable)
+                selectable = gt.assert_selectable(from_selectable)
                 field = selectable.fields(self.type_registry)[sel.name]
                 result[sel.alias if sel.alias is not None else sel.name] = self.__select_field(sel, field, resolver)
                 continue
             if isinstance(sel, qm.FragmentSpread):
-                raise NotImplementedError()
+                self.__select_fragment(result, self.fragments[sel.fragment_name], from_selectable, resolver)
             if isinstance(sel, qm.InlineFragment):
-                self.__select(result, sel.selections, spreadable, resolver)
+                self.__select(result, sel.selections, from_selectable, resolver)
+
+    def __select_fragment(self, result: t.Dict[str, PrimitiveType], frg: qm.Fragment,
+                          from_selectable: gt.SpreadableType,
+                          resolver: SomeResolver) -> None:
+        on_type = gt.assert_spreadable(self.__resolve_type(frg.on_type.name))
+        if isinstance(on_type, gt.Interface) or isinstance(on_type, gt.Union):
+            possible_objects = {str(o) for o in on_type.of_objects(self.type_registry)}
+        else:
+            if not isinstance(on_type, gt.Object):
+                raise RuntimeError("Object expected here")
+            possible_objects = {str(on_type)}
+
+        if resolver.type not in possible_objects:
+            return
+
+        self.__select(result, frg.selections, from_selectable, resolver)
 
     def __select_field(self, field_selection: qm.FieldSelection, field_definition: gt.Field,
                        resolver: t.Any) -> PrimitiveType:
@@ -144,17 +165,17 @@ class _OperationRunner:
             return None
 
         if isinstance(subresolvers, list):
-            result = []
+            result_arr: t.List[PrimitiveType] = []
             for sr in subresolvers:
-                result.append(self.__resolve_subresolvers(selections, field_type, sr))
-            return result
+                result_arr.append(self.__resolve_subresolvers(selections, field_type, sr))
+            return result_arr
 
-        result = {}
-        self.__select(result, selections, field_type, subresolvers)
-        return result
+        result_dict: t.Dict[str, PrimitiveType] = {}
+        self.__select(result_dict, selections, field_type, subresolvers)
+        return result_dict
 
     def __select_plain_field(self, field_type: gt.GqlType, name: str, args: t.Mapping[str, PrimitiveType],
-                             resolver: t.Any) -> PrimitiveType:
+                             resolver: SomeResolver) -> PrimitiveType:
         try:
             result = t.cast(PrimitiveType, getattr(resolver, name).__call__(**args))
         except Exception as e:
