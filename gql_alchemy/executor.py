@@ -25,12 +25,17 @@ SomeResolver = t.TypeVar('SomeResolver', bound=Resolver)
 
 
 class Executor:
-    def __init__(self, schema: s.Schema, resolver: t.Any) -> None:
+    def __init__(self, schema: s.Schema, query_resolver: SomeResolver,
+                 mutation_resolver: t.Optional[SomeResolver] = None) -> None:
         self.schema = schema
         self.type_registry = schema.type_registry
-        self.resolver = resolver
+        self.query_resolver = query_resolver
+        self.mutation_resolver = mutation_resolver
         self.query_object_name = schema.query_object_name
         self.mutation_object_name = schema.mutation_object_name
+
+        if self.mutation_object_name is not None and mutation_resolver is None:
+            raise GqlExecutionError("Mutation resolver required with schema that supports mutations")
 
     def query(self, query: str, variables: t.Mapping[str, PrimitiveType],
               op_to_run: t.Optional[str] = None) -> PrimitiveType:
@@ -54,15 +59,17 @@ class Executor:
 
         if isinstance(operation, qm.Query):
             root_object_name = self.query_object_name
+            resolver = self.query_resolver
         else:
-            if self.mutation_object_name is None:
+            if self.mutation_object_name is None or self.mutation_resolver is None:
                 raise RuntimeError("Server does not support mutations")
             root_object_name = self.mutation_object_name
+            resolver = self.mutation_resolver
 
         return _OperationRunner(self.type_registry, variables, document).run_operation(
             t.cast(gt.Object, self.type_registry.resolve_type(root_object_name)),
             operation,
-            self.resolver
+            resolver
         )
 
 
@@ -122,7 +129,7 @@ class _OperationRunner:
             self.__select(result, frg.selections, from_selectable, resolver)
 
     def __select_field(self, field_selection: qm.FieldSelection, field_definition: gt.Field,
-                       resolver: t.Any) -> PrimitiveType:
+                       resolver: SomeResolver) -> PrimitiveType:
         args = self.__prepare_args(field_selection.arguments)
 
         field_type = field_definition.type(self.type_registry)
@@ -137,7 +144,11 @@ class _OperationRunner:
                                   selections: t.Sequence[qm.Selection],
                                   resolver: t.Any) -> PrimitiveType:
         try:
-            subresolvers = getattr(resolver, name)(**args)
+            attr = getattr(resolver, name)
+            if len(args) == 0 and not callable(attr):
+                subresolvers = attr
+            else:
+                subresolvers = attr(**args)
         except Exception as e:
             raise GqlExecutionError("Resolver internal error") from e
         if not self.__resolver_compatible(field_type, subresolvers):
@@ -194,11 +205,17 @@ class _OperationRunner:
     def __select_plain_field(self, field_type: gt.GqlType, name: str, args: t.Mapping[str, PrimitiveType],
                              resolver: SomeResolver) -> PrimitiveType:
         try:
-            result = t.cast(PrimitiveType, getattr(resolver, name).__call__(**args))
+            attr = getattr(resolver, name)
+            if len(args) == 0 and not callable(attr):
+                result = t.cast(PrimitiveType, attr)
+            else:
+                result = t.cast(PrimitiveType, attr(**args))
         except Exception as e:
             raise GqlExecutionError("Resolver internal error") from e
+
         if not field_type.is_assignable(result, self.type_registry):
             raise GqlExecutionError("Resolver returns wrong type")
+
         return result
 
     def __prepare_args(self, arguments: t.Sequence[qm.Argument]) -> t.Mapping[str, PrimitiveType]:

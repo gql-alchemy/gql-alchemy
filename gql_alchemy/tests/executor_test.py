@@ -3,15 +3,16 @@ import typing as t
 import unittest
 
 import gql_alchemy.schema as s
-from ..executor import Executor, Resolver
+from ..executor import Executor, Resolver, SomeResolver
 from ..utils import PrimitiveType
 
 
 class ExecutorTest(unittest.TestCase):
-    def assertQueryResult(self, expected: str, schema: s.Schema, resolver: t.Any,
-                          query: str, variables: t.Optional[t.Mapping[str, PrimitiveType]] = None,
+    def assertQueryResult(self, expected: str, schema: s.Schema, query: str, query_resolver: SomeResolver,
+                          mutation_resolver: SomeResolver = None,
+                          variables: t.Optional[t.Mapping[str, PrimitiveType]] = None,
                           op_name: t.Optional[str] = None) -> None:
-        e = Executor(schema, resolver)
+        e = Executor(schema, query_resolver, mutation_resolver)
         result = e.query(query, variables if variables is not None else {}, op_name)
         self.assertEqual(expected, json.dumps(result, sort_keys=True))
 
@@ -31,8 +32,8 @@ class ExecutorTest(unittest.TestCase):
                     "foo": s.Int
                 })
             ),
-            QueryResolver(),
-            "{foo}"
+            "{foo}",
+            QueryResolver()
         )
 
     def test_select_with_arguments(self) -> None:
@@ -62,8 +63,8 @@ class ExecutorTest(unittest.TestCase):
                     "foo": s.Field("Foo", {"foo": s.Int})
                 })
             ),
-            QueryResolver(),
-            "{foo(foo: 3){bar(abc: 4)}}"
+            "{foo(foo: 3){bar(abc: 4)}}",
+            QueryResolver()
         )
 
     def test_fragment_select(self):
@@ -87,9 +88,8 @@ class ExecutorTest(unittest.TestCase):
                     "bar": s.String
                 })
             ),
-            QueryResolver(),
-            "{ foo ...Bar} fragment Bar on Query { bar }"
-        )
+            "{ foo ...Bar} fragment Bar on Query { bar }",
+            QueryResolver())
 
     def test_inline_fragment_select(self):
         class QueryResolver(Resolver):
@@ -112,8 +112,8 @@ class ExecutorTest(unittest.TestCase):
                     "bar": s.String
                 })
             ),
-            QueryResolver(),
-            "{ foo ... { bar }}"
+            "{ foo ... { bar }}",
+            QueryResolver()
         )
 
     def test_inline_fragment_type_selection(self):
@@ -147,6 +147,71 @@ class ExecutorTest(unittest.TestCase):
                     "list": s.List("Foo"),
                 })
             ),
-            QueryResolver(),
-            "{ list { foo ... on FooBar { bar } }}"
+            "{ list { foo ... on FooBar { bar } }}",
+            QueryResolver()
+        )
+
+    def test_non_callable_resolving(self):
+        class Bar(Resolver):
+            bar_field = "bar_field"
+
+        class Query(Resolver):
+            foo = "foo"
+
+            bar = Bar()
+
+        self.assertQueryResult('{"bar": {"bar_field": "bar_field"}, "foo": "foo"}', s.Schema(
+            [
+                s.Object("Bar", {
+                    "bar_field": s.String
+                })
+            ],
+            s.Object("Query", {
+                "foo": s.String,
+                "bar": "Bar"
+            })
+        ), "{ foo bar { bar_field }}", Query())
+
+    def test_operation_selection(self):
+        class Query(Resolver):
+            foo = "foo"
+            bar = "bar"
+
+        self.assertQueryResult(
+            '{"foo": "foo"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String,
+                    "bar": s.String
+                })
+            ),
+            "query selectAll { foo bar } query selectFoo { foo }",
+            Query(),
+            variables={}, op_name="selectFoo"
+        )
+
+    def test_mutation(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        class Mutation(Resolver):
+            bar = "bar"
+
+        self.assertQueryResult(
+            '{"bar": "bar"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String,
+                }),
+                s.Object("Mutation", {
+                    "bar": s.String,
+                })
+            ),
+            "mutation { bar }",
+            Query(),
+            Mutation()
         )
