@@ -102,26 +102,26 @@ class Validator(qm.QueryVisitor):
         self._location = gt.DirectiveLocations.INLINE_FRAGMENT
 
         if fragment.on_type is not None:
-            ot_type_name = fragment.on_type.name
+            on_type_name = fragment.on_type.name
             spreadable = self._spreadables[-1]
             if isinstance(spreadable, gt.Object):
-                if ot_type_name != str(spreadable):
+                if on_type_name != str(spreadable):
                     raise GqlValidationError(
                         "Inline fragment on object field must be of the same type; `{}` expected, got `{}`".format(
-                            spreadable, ot_type_name
+                            spreadable, on_type_name
                         )
                     )
                 self._spreadables.append(spreadable)
             elif isinstance(spreadable, gt.Union) or isinstance(spreadable, gt.Interface):
                 of_objects = {str(o) for o in spreadable.of_objects(self.type_registry)}
-                if ot_type_name not in of_objects:
+                if on_type_name not in of_objects:
                     of_objects_list = list(of_objects)
                     of_objects_list.sort()
                     raise GqlValidationError("One of {} types expected, but got `{}`".format(
                         ", ".join(('`' + o + '`' for o in of_objects_list)),
-                        ot_type_name
+                        on_type_name
                     ))
-                self._spreadables.append(gt.assert_spreadable(self.type_registry.resolve_type(ot_type_name)))
+                self._spreadables.append(gt.assert_spreadable(self.type_registry.resolve_type(on_type_name)))
             else:
                 raise RuntimeError("Spreadable must be Object, Interface or Union")
         else:
