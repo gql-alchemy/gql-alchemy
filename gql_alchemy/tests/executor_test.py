@@ -90,3 +90,63 @@ class ExecutorTest(unittest.TestCase):
             QueryResolver(),
             "{ foo ...Bar} fragment Bar on Query { bar }"
         )
+
+    def test_inline_fragment_select(self):
+        class QueryResolver(Resolver):
+            def __init__(self):
+                super().__init__("Query")
+
+            def foo(self):
+                return "foo"
+
+            def bar(self):
+                return "bar"
+
+        self.assertQueryResult(
+            '{"bar": "bar", "foo": "foo"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String,
+                    "bar": s.String
+                })
+            ),
+            QueryResolver(),
+            "{ foo ... { bar }}"
+        )
+
+    def test_inline_fragment_type_selection(self):
+        class FooBarResolver(Resolver):
+            def foo(self):
+                return "foo from foobar"
+
+            def bar(self):
+                return "bar"
+
+        class FooAbcResolver(Resolver):
+            def foo(self):
+                return "foo from fooabc"
+
+            def abc(self):
+                return "abc"
+
+        class QueryResolver(Resolver):
+            def list(self):
+                return [FooBarResolver(), FooAbcResolver()]
+
+        self.assertQueryResult(
+            '{"list": [{"bar": "bar", "foo": "foo from foobar"}, {"foo": "foo from fooabc"}]}',
+            s.Schema(
+                [
+                    s.Interface("Foo", {"foo": s.String}),
+                    s.Object("FooBar", {"bar": s.String}, {"Foo"}),
+                    s.Object("FooAbc", {"abc": s.String}, {"Foo"})
+                ],
+                s.Object("Query", {
+                    "list": s.List("Foo"),
+                })
+            ),
+            QueryResolver(),
+            "{ list { foo ... on FooBar { bar } }}"
+        )

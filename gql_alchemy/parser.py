@@ -56,12 +56,12 @@ class VerifyDocument(qm.QueryVisitor):
     def visit_mutation_end(self, mutation: qm.Mutation) -> None:
         self.__current_op_name = None
 
-    def visit_fragment_begin(self, fragment: qm.Fragment) -> None:
+    def visit_fragment_begin(self, fragment: qm.NamedFragment) -> None:
         self.__direct_fragments_variables[fragment.name] = set()
         self.__f2f_calls[fragment.name] = set()
         self.__current_fragment_name = fragment.name
 
-    def visit_fragment_end(self, fragment: qm.Fragment) -> None:
+    def visit_fragment_end(self, fragment: qm.NamedFragment) -> None:
         self.__current_fragment_name = None
 
     def visit_variable(self, var: qm.Variable) -> None:
@@ -294,7 +294,7 @@ class DocumentParser(ElementParser):
         self.set_document = set_document
 
         self.operations: t.List[qm.Operation] = []
-        self.fragments: t.List[qm.Fragment] = []
+        self.fragments: t.List[qm.NamedFragment] = []
         self.selections: t.List[qm.Selection] = []
 
         self.selection_allowed = True
@@ -1090,7 +1090,7 @@ class InlineFragmentParser(ElementParser):
 
 
 class FragmentParser(ElementParser):
-    def __init__(self, fragments: t.List[qm.Fragment]) -> None:
+    def __init__(self, fragments: t.List[qm.NamedFragment]) -> None:
         self.fragments = fragments
 
         self.name: t.Optional[str] = None
@@ -1131,7 +1131,7 @@ class FragmentParser(ElementParser):
         if self.name is None or self.on_type is None:
             raise RuntimeError("Unexpected `None`")
 
-        self.fragments.append(qm.Fragment(self.name, self.on_type, self.directives, self.selections))
+        self.fragments.append(qm.NamedFragment(self.name, self.on_type, self.directives, self.selections))
         return None, 1
 
     def to_dbg_repr(self) -> PrimitiveType:

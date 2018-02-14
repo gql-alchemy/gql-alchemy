@@ -759,7 +759,7 @@ class InlineFragmentParserTest(ParsingTest):
 
 class FragmentParserTest(ParsingTest):
     def init_parser(self) -> ElementParser:
-        self.fragments: t.List[qm.Fragment] = []
+        self.fragments: t.List[qm.NamedFragment] = []
         return FragmentParser(self.fragments)
 
     def get_result(self) -> qm.GraphQlModelType:

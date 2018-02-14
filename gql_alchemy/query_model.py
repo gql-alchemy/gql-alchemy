@@ -34,10 +34,10 @@ class QueryVisitor:
     def visit_argument(self, argument: 'Argument') -> None:
         pass
 
-    def visit_fragment_begin(self, fragment: 'Fragment') -> None:
+    def visit_fragment_begin(self, fragment: 'NamedFragment') -> None:
         pass
 
-    def visit_fragment_end(self, fragment: 'Fragment') -> None:
+    def visit_fragment_end(self, fragment: 'NamedFragment') -> None:
         pass
 
     def visit_field_selection_begin(self, field_sel: 'FieldSelection') -> None:
@@ -105,9 +105,9 @@ class GraphQlModelType(PrimitiveSerializable):
 
 class Document(GraphQlModelType):
     operations: Sequence['Operation']
-    fragments: Sequence['Fragment']
+    fragments: Sequence['NamedFragment']
 
-    def __init__(self, operations: Sequence['Operation'], fragments: Sequence['Fragment']) -> None:
+    def __init__(self, operations: Sequence['Operation'], fragments: Sequence['NamedFragment']) -> None:
         self.operations = operations
         self.fragments = fragments
 
@@ -500,6 +500,18 @@ class Argument(GraphQlModelType):
 
 
 class Fragment(GraphQlModelType):
+    on_type: Optional[NamedType]
+    directives: Sequence[Directive]
+    selections: Sequence['Selection']
+
+    def visit(self, visitor: QueryVisitor) -> None:
+        raise NotImplementedError()
+
+    def to_primitive(self) -> PrimitiveType:
+        raise NotImplementedError()
+
+
+class NamedFragment(Fragment):
     name: str
     on_type: NamedType
     directives: Sequence[Directive]
@@ -603,7 +615,7 @@ class FragmentSpread(Selection):
         return d
 
 
-class InlineFragment(Selection):
+class InlineFragment(Selection, Fragment):
     on_type: Optional[NamedType]
     directives: Sequence[Directive]
     selections: Sequence[Selection]
@@ -641,5 +653,5 @@ class InlineFragment(Selection):
 __all__ = ["GraphQlModelType", "Document", "Operation", "Query", "Mutation", "VariableDefinition",
            "Type", "NamedType", "ListType", "Directive", "ConstValue", "Value", "Variable",
            "NullValue", "EnumValue", "IntValue", "FloatValue", "StrValue", "BoolValue",
-           "ConstListValue", "ConstObjectValue", "ObjectValue", "Argument", "Fragment", "Selection",
-           "FieldSelection", "FragmentSpread", "InlineFragment", "QueryVisitor"]
+           "ConstListValue", "ConstObjectValue", "ObjectValue", "Argument", "Fragment", "NamedFragment",
+           "Selection", "FieldSelection", "FragmentSpread", "InlineFragment", "QueryVisitor"]

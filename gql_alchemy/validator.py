@@ -53,7 +53,7 @@ class Validator(qm.QueryVisitor):
         logger.debug("%s - finish mutation %s", self.__name, mutation.name)
         del self._spreadables[-1]
 
-    def visit_fragment_begin(self, fragment: qm.Fragment) -> None:
+    def visit_fragment_begin(self, fragment: qm.NamedFragment) -> None:
         logger.debug("%s - visit fragment %s", self.__name, fragment.name)
         self._def_name = fragment.name
 
@@ -67,7 +67,7 @@ class Validator(qm.QueryVisitor):
 
         self._location = gt.DirectiveLocations.FRAGMENT_DEFINITION
 
-    def visit_fragment_end(self, fragment: qm.Fragment) -> None:
+    def visit_fragment_end(self, fragment: qm.NamedFragment) -> None:
         logger.debug("%s - finish fragment %s", self.__name, fragment.name)
         del self._spreadables[-1]
 
@@ -189,7 +189,7 @@ class PassOne(Validator):
         super().__init__(type_registry, query, mutation)
         self.fragments: t.Dict[str, gt.SpreadableType] = {}
 
-    def visit_fragment_begin(self, fragment: qm.Fragment) -> None:
+    def visit_fragment_begin(self, fragment: qm.NamedFragment) -> None:
         super().visit_fragment_begin(fragment)
         on_type = self._resolve_type(fragment.on_type)
         spreadable = gt.is_spreadable(on_type)
@@ -210,8 +210,8 @@ class PassTwo(Validator):
         self.__vars_values = vars_values
         self.__op_to_run = op_to_run
 
-        self.__root: t.Optional[t.Union[qm.Operation, qm.Fragment]] = None
-        self.fragment_calls: t.Dict[str, t.List[t.Union[qm.Operation, qm.Fragment]]] = {}
+        self.__root: t.Optional[t.Union[qm.Operation, qm.NamedFragment]] = None
+        self.fragment_calls: t.Dict[str, t.List[t.Union[qm.Operation, qm.NamedFragment]]] = {}
         self.environments: t.Dict[str, Env] = {}
 
     def visit_query_begin(self, query: qm.Query) -> None:
@@ -224,7 +224,7 @@ class PassTwo(Validator):
         self.__root = mutation
         self.__save_env(mutation)
 
-    def visit_fragment_begin(self, fragment: qm.Fragment) -> None:
+    def visit_fragment_begin(self, fragment: qm.NamedFragment) -> None:
         super().visit_fragment_begin(fragment)
         self.__root = fragment
 
@@ -261,7 +261,7 @@ class PassTwo(Validator):
 
         for var in op.variables:
             var_type = self._resolve_type(var.type)
-            var_type_input_or_wrapper: t.Union[gt.InputType, gt.WrapperType] = gt.is_input(var_type)
+            var_type_input_or_wrapper: t.Union[gt.InputType, gt.WrapperType, None] = gt.is_input(var_type)
             if var_type_input_or_wrapper is None:
                 var_type_input_or_wrapper = gt.is_wrapper(var_type)
                 if var_type_input_or_wrapper is None:
@@ -293,12 +293,13 @@ class PassTwo(Validator):
             env = Env(vars_definitions, None)
 
         for var_name, var_type in env.vars_definitions.items():
-            if vars_defaults[var_name] is not None and \
-                    not var_type.validate_input(vars_defaults[var_name], None, self.type_registry):
-                raise GqlValidationError(
-                    "Variable can not be assigned to its default; "
-                    "problem with `{}` variable in `{}` operation".format(var_name, op.name)
-                )
+            default = vars_defaults[var_name]
+            if default is not None:
+                if not var_type.validate_input(default, None, {}, self.type_registry):
+                    raise GqlValidationError(
+                        "Variable can not be assigned to its default; "
+                        "problem with `{}` variable in `{}` operation".format(var_name, op.name)
+                    )
             if env.vars_values is not None:
                 if var_name in env.vars_values:
                     if not var_type.is_assignable(env.vars_values[var_name], self.type_registry):
@@ -326,7 +327,7 @@ class PassThree(Validator):
 
     def __init__(self,
                  environments: t.Mapping[str, Env],
-                 fragment_calls: t.Mapping[str, t.Sequence[t.Union[qm.Operation, qm.Fragment]]],
+                 fragment_calls: t.Mapping[str, t.Sequence[t.Union[qm.Operation, qm.NamedFragment]]],
                  type_registry: gt.TypeRegistry,
                  query: gt.Object,
                  mutation: t.Optional[gt.Object]) -> None:
@@ -345,7 +346,7 @@ class PassThree(Validator):
         super().visit_mutation_begin(mutation)
         self.__current_envs = [self.__environments[self._def_name]]
 
-    def visit_fragment_begin(self, fragment: qm.Fragment) -> None:
+    def visit_fragment_begin(self, fragment: qm.NamedFragment) -> None:
         super().visit_fragment_begin(fragment)
         self.__current_envs = self.__resolve_fragment_envs(fragment)
 
@@ -434,14 +435,14 @@ class PassThree(Validator):
         except gt.TypeResolvingError as e:
             raise GqlValidationError("Unknown directive `{}` used".format(name)) from e
 
-    def __resolve_fragment_envs(self, fragment: qm.Fragment) -> t.Sequence[Env]:
+    def __resolve_fragment_envs(self, fragment: qm.NamedFragment) -> t.Sequence[Env]:
         if fragment.name not in self.__fragment_calls:
             raise GqlValidationError("Unused fragment `{}`".format(fragment.name))
 
         envs = []
 
         for called_from in self.__fragment_calls[fragment.name]:
-            if isinstance(called_from, qm.Fragment):
+            if isinstance(called_from, qm.NamedFragment):
                 for env in self.__resolve_fragment_envs(called_from):
                     envs.append(env)
             else:

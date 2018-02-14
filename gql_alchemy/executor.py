@@ -6,11 +6,19 @@ import gql_alchemy.types as gt
 from .errors import GqlExecutionError
 from .parser import parse_document
 from .utils import PrimitiveType
+from .validator import validate
 
 
 class Resolver:
-    def __init__(self, type: str) -> None:
-        self.type = type
+    def __init__(self, for_type: t.Optional[str] = None) -> None:
+        if for_type is not None:
+            self.type = for_type
+        else:
+            name = type(self).__name__
+            if name.endswith("Resolver"):
+                self.type = name[:-8]
+            else:
+                self.type = name
 
 
 SomeResolver = t.TypeVar('SomeResolver', bound=Resolver)
@@ -18,28 +26,31 @@ SomeResolver = t.TypeVar('SomeResolver', bound=Resolver)
 
 class Executor:
     def __init__(self, schema: s.Schema, resolver: t.Any) -> None:
+        self.schema = schema
         self.type_registry = schema.type_registry
         self.resolver = resolver
         self.query_object_name = schema.query_object_name
         self.mutation_object_name = schema.mutation_object_name
 
     def query(self, query: str, variables: t.Mapping[str, PrimitiveType],
-              operation_name: t.Optional[str] = None) -> PrimitiveType:
+              op_to_run: t.Optional[str] = None) -> PrimitiveType:
         document = parse_document(query)
 
-        if operation_name is None and len(document.operations) > 1:
+        validate(document, self.schema, variables, op_to_run)
+
+        if op_to_run is None and len(document.operations) > 1:
             raise RuntimeError("Operation name is needed for queries with multiple operations defined")
 
         operation: t.Optional[qm.Operation] = None
-        if operation_name is None:
+        if op_to_run is None:
             operation = document.operations[0]
         else:
             for op in document.operations:
-                if op.name == operation_name:
+                if op.name == op_to_run:
                     operation = op
 
         if operation is None:
-            raise RuntimeError("Operation `{}` is not found".format(operation_name))
+            raise RuntimeError("Operation `{}` is not found".format(op_to_run))
 
         if isinstance(operation, qm.Query):
             root_object_name = self.query_object_name
@@ -86,23 +97,29 @@ class _OperationRunner:
             if isinstance(sel, qm.FragmentSpread):
                 self.__select_fragment(result, self.fragments[sel.fragment_name], from_selectable, resolver)
             if isinstance(sel, qm.InlineFragment):
-                self.__select(result, sel.selections, from_selectable, resolver)
+                self.__select_fragment(result, sel, from_selectable, resolver)
 
     def __select_fragment(self, result: t.Dict[str, PrimitiveType], frg: qm.Fragment,
                           from_selectable: gt.SpreadableType,
                           resolver: SomeResolver) -> None:
-        on_type = gt.assert_spreadable(self.__resolve_type(frg.on_type.name))
-        if isinstance(on_type, gt.Interface) or isinstance(on_type, gt.Union):
-            possible_objects = {str(o) for o in on_type.of_objects(self.type_registry)}
+        if frg.on_type is not None:
+            on_type = gt.assert_spreadable(self.__resolve_type(frg.on_type.name))
+            if isinstance(on_type, gt.Interface) or isinstance(on_type, gt.Union):
+                possible_objects = {str(o) for o in on_type.of_objects(self.type_registry)}
+            else:
+                if not isinstance(on_type, gt.Object):
+                    raise RuntimeError("Object expected here")
+                possible_objects = {str(on_type)}
+
+            if resolver.type not in possible_objects:
+                return
+
+            resolver_type = gt.assert_selectable(self.__resolve_type(resolver.type))
+
+            self.__select(result, frg.selections, resolver_type, resolver)
+
         else:
-            if not isinstance(on_type, gt.Object):
-                raise RuntimeError("Object expected here")
-            possible_objects = {str(on_type)}
-
-        if resolver.type not in possible_objects:
-            return
-
-        self.__select(result, frg.selections, from_selectable, resolver)
+            self.__select(result, frg.selections, from_selectable, resolver)
 
     def __select_field(self, field_selection: qm.FieldSelection, field_definition: gt.Field,
                        resolver: t.Any) -> PrimitiveType:
