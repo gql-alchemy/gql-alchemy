@@ -364,3 +364,158 @@ class ExecutorTest(unittest.TestCase):
             "{ foo {...Foo} } fragment Foo on FooInt { foo }",
             Query()
         )
+
+    def test_skip_true_directive_on_field(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ foo @skip(if: true) }",
+            Query()
+        )
+
+    def test_skip_false_directive_on_field(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{"foo": "foo"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ foo @skip(if: false) }",
+            Query()
+        )
+
+    def test_include_true_directive_on_field(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{"foo": "foo"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ foo @include(if: true) }",
+            Query()
+        )
+
+    def test_include_false_directive_on_field(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ foo @include(if: false) }",
+            Query()
+        )
+
+    def test_skip_true_directive_on_fragment_spread(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ ... Foo @skip(if: true) } fragment Foo on Query { foo }",
+            Query()
+        )
+
+    def test_skip_false_directive_on_fragment_spread(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{"foo": "foo"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ ... Foo @skip(if: false) } fragment Foo on Query { foo }",
+            Query()
+        )
+
+    def test_skip_true_directive_on_inline_spread(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ ... @skip(if: true) { foo } }",
+            Query()
+        )
+
+    def test_skip_false_directive_on_inline_spread(self):
+        class Query(Resolver):
+            foo = "foo"
+
+        self.assertQueryResult(
+            '{"foo": "foo"}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String
+                })
+            ),
+            "{ ... @skip(if: false) { foo } }",
+            Query()
+        )
+
+    def test_directive_affect_its_target_only(self):
+        class Query(Resolver):
+            foo = "foo"
+            bar = 10
+
+        self.assertQueryResult(
+            '{"bar": 10}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.String,
+                    "bar": s.Int
+                })
+            ),
+            "{ ... @skip(if: true) { foo } bar }",
+            Query()
+        )

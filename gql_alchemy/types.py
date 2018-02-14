@@ -827,7 +827,19 @@ class TypeRegistry:
                 raise GqlSchemaError("Type re-definition; problem with `{}` type".format(str(type_def)))
             self.__types_by_names[str(type_def)] = type_def
 
-        self.__directives = directives
+        self.__directives = list(directives)
+
+        self.__directives.append(Directive(
+            "skip",
+            {DirectiveLocations.INLINE_FRAGMENT, DirectiveLocations.FRAGMENT_SPREAD, DirectiveLocations.FIELD},
+            {"if": Argument(Boolean, None)}
+        ))
+        self.__directives.append(Directive(
+            "include",
+            {DirectiveLocations.INLINE_FRAGMENT, DirectiveLocations.FRAGMENT_SPREAD, DirectiveLocations.FIELD},
+            {"if": Argument(Boolean, None)}
+        ))
+
         self.__directives_by_names = dict(((str(directive)[1:], directive) for directive in self.__directives))
 
         self.__validate()
