@@ -1,5 +1,6 @@
 import json
 import typing as t
+from itertools import chain
 
 import gql_alchemy.types as gt
 from .errors import GqlSchemaError
@@ -312,7 +313,6 @@ class Schema:
                  directives: t.Optional[t.Sequence[Directive]] = None) -> None:
 
         self.types = list(types)
-        self.types.append(query)
         self.query_object_name = query.name
 
         self.mutation_object_name: t.Optional[str] = None
@@ -322,9 +322,14 @@ class Schema:
 
         self.directives = directives or []
         self.type_registry = gt.TypeRegistry(
-            [type_def.to_type() for type_def in self.types],
+            list(chain(
+                (type_def.to_type() for type_def in self.types),
+                [_IntrospectionQueryObject(query.to_type())]
+            )),
             [dir_def.to_directive() for dir_def in self.directives]
         )
+
+        self.types.append(query)
 
     def format(self) -> str:
         lines: t.List[str] = []
@@ -392,6 +397,35 @@ def _format_args(args: t.Optional[t.Mapping[str, InputValue]]) -> str:
     parts.append(")")
 
     return "".join(parts)
+
+
+class _IntrospectionQueryObject(gt.Object):
+    def __init__(self, query_obj: gt.Object) -> None:
+        super().__init__(str(query_obj), {
+            "__schema": gt.Field(gt.NonNull("__Schema"), {}),
+            "__type": gt.Field("__Type", {"name": gt.Argument(gt.NonNull(gt.String), None)})
+        }, set())
+
+        self.__query_obj = query_obj
+
+    def fields(self, type_registry: gt.TypeRegistry) -> t.Mapping[str, gt.Field]:
+        return dict(
+            chain(
+                self.__query_obj.fields(type_registry).items(),
+                super().fields(type_registry).items()
+            )
+        )
+
+    def own_fields(self) -> t.Mapping[str, gt.Field]:
+        return dict(
+            chain(
+                self.__query_obj.own_fields().items(),
+                super().own_fields().items()
+            )
+        )
+
+    def implements(self, type_registry: gt.TypeRegistry) -> t.Sequence[gt.Interface]:
+        return self.__query_obj.implements(type_registry)
 
 
 __all__ = ["Boolean", "Int", "Float", "String", "ID", "NonNull", "List", "EnumValue", "Enum", "InputValue",
