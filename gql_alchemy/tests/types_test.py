@@ -823,6 +823,14 @@ class TypeRegistryTest(TypesTest):
             ]
         )
 
+    def test_non_null_arguments(self) -> None:
+        gt.TypeRegistry(
+            [
+                gt.Object("Foo", {"foo": gt.Field(gt.Int, {"a": gt.Argument(gt.NonNull(gt.Int), None)})}, set())
+            ],
+            []
+        )
+
     def test_fields_redeclaration(self) -> None:
         gt.TypeRegistry(
             [

@@ -979,7 +979,7 @@ class TypeRegistry:
                 raise _SchemaAssertionError(str(e), arg_name) from e
             except _SchemaAssertionError as e:
                 raise _SchemaAssertionError("Input type expected", arg_name) from e
-            if not arg_type.is_assignable(arg.default, self):
+            if arg.default is not None and not arg_type.is_assignable(arg.default, self):
                 raise _SchemaAssertionError("{} is not assignable to `{}` type".format(
                     json.dumps(arg.default), str(arg_type)
                 ), arg_name)
