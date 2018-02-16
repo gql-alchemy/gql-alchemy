@@ -307,8 +307,8 @@ class _EnumValueResolver(Resolver):
         super().__init__("__EnumValue")
         self.name = value.name
         self.description = value.description
-        self.isDepricated = value.is_deprecated
-        self.depricationReason = value.deprecation_reason
+        self.isDeprecated = value.is_deprecated
+        self.deprecationReason = value.deprecation_reason
 
 
 class _DirectiveResolver(Resolver):

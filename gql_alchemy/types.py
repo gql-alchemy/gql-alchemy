@@ -775,8 +775,8 @@ class TypeRegistry:
                 "description": Field(String, {}),
                 "args": Field(NonNull(List(NonNull("__InputValue"))), {}),
                 "type": Field(NonNull("__Type"), {}),
-                "isDepricated": Field(NonNull(Boolean), {}),
-                "depricationReason": Field(String, {})
+                "isDeprecated": Field(NonNull(Boolean), {}),
+                "deprecationReason": Field(String, {})
             }, set()),
 
             Object("__InputValue", {
@@ -789,8 +789,8 @@ class TypeRegistry:
             Object("__EnumValue", {
                 "name": Field(NonNull(String), {}),
                 "description": Field(String, {}),
-                "isDepricated": Field(NonNull(Boolean), {}),
-                "depricationReason": Field(String, {})
+                "isDeprecated": Field(NonNull(Boolean), {}),
+                "deprecationReason": Field(String, {})
             }, set()),
 
             Enum("__TypeKind", {
