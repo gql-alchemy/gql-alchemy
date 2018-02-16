@@ -218,6 +218,11 @@ class _OperationRunner:
             elif field_name.startswith("__"):
                 field_name = "f" + field_name
 
+            if not hasattr(resolver, field_name):
+                raise GqlExecutionError("Resolver `{}` for `{}` type does not have `{}` attribute".format(
+                    type(resolver).__name__, resolver.for_gql_type, field_name
+                ))
+
             attr = getattr(resolver, field_name)
             for d in parent_directives:
                 attr = d.wrap_field(attr, args)
