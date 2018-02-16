@@ -665,7 +665,7 @@ class FieldParser(ElementParser):
         name = self.read_name(reader)
 
         if name in self.selected_aliases:
-            raise GqlParsingError("Selection under `{}` alias already defined", reader)
+            raise GqlParsingError("Selection under `{}` alias already defined".format(name), reader)
         self.selected_aliases.add(name)
 
         if self.read_if(reader, ":"):
