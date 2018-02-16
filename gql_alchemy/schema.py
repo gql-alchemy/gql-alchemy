@@ -21,7 +21,7 @@ def List(of_type: t.Union[gt.InlineType, str]) -> gt.List:
     return gt.List(of_type)
 
 
-class _TypeDefinition:
+class TypeDefinition:
     def __init__(self, name: str, description: t.Optional[str] = None) -> None:
         self.name = name
         self.description = description
@@ -42,11 +42,11 @@ class EnumValue:
         self.deprecation_reason = deprecation_reason
 
 
-class Enum(_TypeDefinition):
+class Enum(TypeDefinition):
     def __init__(self, name: str, enum_values: t.Sequence[t.Union[EnumValue, str]],
                  description: t.Optional[str] = None) -> None:
-        _TypeDefinition.__init__(self, name, description)
-        self.values = [EnumValue(i) if isinstance(i, str) else i for i in enum_values]
+        TypeDefinition.__init__(self, name, description)
+        self.values: t.Sequence[EnumValue] = [EnumValue(i) if isinstance(i, str) else i for i in enum_values]
         self.__names = {v.name for v in self.values}
 
     def to_type(self) -> gt.UserType:
@@ -122,7 +122,7 @@ class Field:
         return "\n".join(lines)
 
 
-class _SelectableTypeDefinition(_TypeDefinition):
+class _SelectableTypeDefinition(TypeDefinition):
     """Object, Interface"""
 
     def __init__(self, name: str,
@@ -171,7 +171,7 @@ class Object(_SelectableTypeDefinition):
 
         self.interfaces = interfaces
 
-    def to_type(self) -> gt.UserType:
+    def to_type(self) -> gt.Object:
         return gt.Object(self.name,
                          dict(((field_name, field.to_type_field()) for field_name, field in self.fields.items())),
                          self.interfaces)
@@ -198,7 +198,7 @@ class Interface(_SelectableTypeDefinition):
         return "interface " + self.name + " {"
 
 
-class Union(_TypeDefinition):
+class Union(TypeDefinition):
     def __init__(self, name: str, possible_types: t.Set[str], description: t.Optional[str] = None) -> None:
         super().__init__(name, description)
         self.possible_types = possible_types
@@ -216,7 +216,7 @@ class IoField:
         self.description = description
 
 
-class InputObject(_TypeDefinition):
+class InputObject(TypeDefinition):
     def __init__(self, name: str, input_fields: t.Mapping[str, t.Union[IoField, gt.InlineType, str]],
                  description: t.Optional[str] = None) -> None:
         super().__init__(name, description)
@@ -320,7 +320,7 @@ class Schema:
             self.types.append(mutation)
             self.mutation_object_name = mutation.name
 
-        self.directives = directives or []
+        self.directives: t.Sequence[Directive] = directives or []
         self.type_registry = gt.TypeRegistry(
             list(chain(
                 (type_def.to_type() for type_def in self.types),

@@ -5,6 +5,7 @@ import gql_alchemy.schema as s
 import gql_alchemy.types as gt
 from .errors import GqlExecutionError
 from .parser import parse_document
+from .resolvers import Resolver, IntrospectionResolver, Introspection
 from .utils import PrimitiveType
 from .validator import validate
 
@@ -17,18 +18,6 @@ _py_reserved = {
     "assert", "else", "import", "pass",
     "break", "except", "in", "raise"
 }
-
-
-class Resolver:
-    def __init__(self, for_type: t.Optional[str] = None) -> None:
-        if for_type is not None:
-            self.type = for_type
-        else:
-            name = type(self).__name__
-            if name.endswith("Resolver"):
-                self.type = name[:-8]
-            else:
-                self.type = name
 
 
 SomeResolver = t.TypeVar('SomeResolver', bound=Resolver)
@@ -66,9 +55,11 @@ class _DirectivesEnv:
     def __init__(self, parent_directives: t.MutableSet[Directive],
                  own_directives: t.Sequence[qm.Directive],
                  directives_constructors: t.Mapping[str, t.Callable[..., Directive]],
-                 vars_values: t.Mapping[str, PrimitiveType]) -> None:
+                 vars_values: t.Mapping[str, PrimitiveType],
+                 type_registry: gt.TypeRegistry) -> None:
         self.__parent_directives = parent_directives
         self.__own_directives = own_directives
+        self.__type_registry = type_registry
         self.__directives_constructors = directives_constructors
         self.__vars_values = vars_values
         self.__added_directives: t.MutableSet[Directive] = set()
@@ -76,12 +67,13 @@ class _DirectivesEnv:
     def __enter__(self) -> None:
         for d in self.__own_directives:
             dir_c = self.__directives_constructors[d.name]
-            args = _prepare_args(d.arguments, self.__vars_values)
+            d_def = self.__type_registry.directive(d.name)
+            args = _prepare_args(d.arguments, self.__vars_values, d_def.args)
             directive = dir_c(**args)
             self.__parent_directives.add(directive)
             self.__added_directives.add(directive)
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: t.Any, exc_val: t.Any, exc_tb: t.Any) -> None:
         for d in self.__added_directives:
             self.__parent_directives.remove(d)
 
@@ -124,16 +116,16 @@ class Executor:
             raise GqlExecutionError("Operation `{}` is not found".format(op_to_run))
 
         if isinstance(operation, qm.Query):
-            root_object_name = self.query_object_name
-            resolver = self.query_resolver
+            root_object = self.type_registry.resolve_type(self.query_object_name)
+            resolver = IntrospectionResolver(self.query_resolver, Introspection(self.schema))
         else:
             if self.mutation_object_name is None or self.mutation_resolver is None:
                 raise GqlExecutionError("Server does not support mutations")
-            root_object_name = self.mutation_object_name
+            root_object = self.type_registry.resolve_type(self.mutation_object_name)
             resolver = self.mutation_resolver
 
         return _OperationRunner(self.type_registry, variables, document, self.directives).run_operation(
-            t.cast(gt.Object, self.type_registry.resolve_type(root_object_name)),
+            t.cast(gt.Object, root_object),
             operation,
             resolver
         )
@@ -150,22 +142,22 @@ class _OperationRunner:
         self.directives = directives
 
     def run_operation(self, root_object: gt.Object, operation: qm.Operation,
-                      root_resolver: t.Any) -> t.Mapping[str, PrimitiveType]:
+                      root_resolver: Resolver) -> t.Mapping[str, PrimitiveType]:
         for var in operation.variables:
             if var.default is not None:
                 self.vars_values.setdefault(var.name, var.default.to_py_value({}))
 
         result: t.Dict[str, PrimitiveType] = {}
-        directives = set()
+        directives: t.MutableSet[Directive] = set()
 
-        with _DirectivesEnv(directives, operation.directives, self.directives, self.vars_values):
+        with _DirectivesEnv(directives, operation.directives, self.directives, self.vars_values, self.type_registry):
             self.__select(directives, result, operation.selections, root_object, root_resolver)
         return result
 
     def __select(self, parent_directives: t.MutableSet[Directive], result: t.Dict[str, PrimitiveType],
                  selections: t.Sequence[qm.Selection],
                  from_selectable: gt.SpreadableType,
-                 resolver: t.Any) -> None:
+                 resolver: Resolver) -> None:
         for sel in selections:
             if isinstance(sel, qm.FieldSelection):
                 selectable = gt.assert_selectable(from_selectable)
@@ -173,7 +165,8 @@ class _OperationRunner:
                 self.__select_field(parent_directives, result, sel, field, resolver)
                 continue
             if isinstance(sel, qm.FragmentSpread):
-                with _DirectivesEnv(parent_directives, sel.directives, self.directives, self.vars_values):
+                with _DirectivesEnv(parent_directives, sel.directives, self.directives, self.vars_values,
+                                    self.type_registry):
                     self.__select_fragment(parent_directives, result, self.fragments[sel.fragment_name],
                                            from_selectable,
                                            resolver)
@@ -184,7 +177,7 @@ class _OperationRunner:
                           result: t.Dict[str, PrimitiveType], frg: qm.Fragment,
                           from_selectable: gt.SpreadableType,
                           resolver: SomeResolver) -> None:
-        with _DirectivesEnv(parent_directives, frg.directives, self.directives, self.vars_values):
+        with _DirectivesEnv(parent_directives, frg.directives, self.directives, self.vars_values, self.type_registry):
             if frg.on_type is not None:
                 on_type = gt.assert_spreadable(self.__resolve_type(frg.on_type.name))
                 if isinstance(on_type, gt.Interface) or isinstance(on_type, gt.Union):
@@ -194,10 +187,10 @@ class _OperationRunner:
                         raise RuntimeError("Object expected here")
                     possible_objects = {str(on_type)}
 
-                if resolver.type not in possible_objects:
+                if resolver.for_gql_type not in possible_objects:
                     return
 
-                resolver_type = gt.assert_selectable(self.__resolve_type(resolver.type))
+                resolver_type = gt.assert_selectable(self.__resolve_type(resolver.for_gql_type))
 
                 self.__select(parent_directives, result, frg.selections, resolver_type, resolver)
 
@@ -207,18 +200,25 @@ class _OperationRunner:
     def __select_field(self, parent_directives: t.MutableSet[Directive], result: t.Dict[str, PrimitiveType],
                        field_selection: qm.FieldSelection,
                        field_definition: gt.Field,
-                       resolver: SomeResolver) -> PrimitiveType:
-        with _DirectivesEnv(parent_directives, field_selection.directives, self.directives, self.vars_values):
+                       resolver: SomeResolver) -> None:
+        with _DirectivesEnv(parent_directives, field_selection.directives, self.directives, self.vars_values,
+                            self.type_registry):
             for d in parent_directives:
                 if not d.should_select_field(resolver, field_selection.name):
                     return
 
-            args = _prepare_args(field_selection.arguments, self.vars_values)
+            args = _prepare_args(field_selection.arguments, self.vars_values, field_definition.args)
 
             field_type = field_definition.type(self.type_registry)
             alias = field_selection.alias if field_selection.alias is not None else field_selection.name
 
-            attr = getattr(resolver, field_selection.name)
+            field_name = field_selection.name
+            if field_name in _py_reserved:
+                field_name = "_" + field_name
+            elif field_name.startswith("__"):
+                field_name = "f" + field_name
+
+            attr = getattr(resolver, field_name)
             for d in parent_directives:
                 attr = d.wrap_field(attr, args)
 
@@ -271,10 +271,10 @@ class _OperationRunner:
         if isinstance(field_type, gt.Interface) or isinstance(field_type, gt.Union):
             possible_objects = field_type.of_objects(self.type_registry)
             possible_objects_names = {str(o) for o in possible_objects}
-            return getattr(field_raw_value, "type", None) in possible_objects_names
+            return field_raw_value.for_gql_type in possible_objects_names
 
         if isinstance(field_type, gt.Object):
-            resolver_type = t.cast(t.Optional[str], getattr(field_raw_value, "type", None))
+            resolver_type = t.cast(t.Optional[str], field_raw_value.for_gql_type)
             return str(field_type) == resolver_type
 
         raise RuntimeError("Wrapper or spreadable expected here, but got {}".format(type(field_type).__name__))
@@ -311,9 +311,15 @@ class _OperationRunner:
 
 
 def _prepare_args(arguments: t.Sequence[qm.Argument],
-                  vars_values: t.Mapping[str, PrimitiveType]) -> t.Mapping[str, PrimitiveType]:
+                  vars_values: t.Mapping[str, PrimitiveType],
+                  args_def: t.Mapping[str, gt.Argument]) -> t.Mapping[str, PrimitiveType]:
     args_values = {}
     for arg in arguments:
         name = arg.name if arg.name not in _py_reserved else "_" + arg.name
         args_values[name] = arg.value.to_py_value(vars_values)
+
+    for arg_name, arg_def in args_def.items():
+        name = arg_name if arg_name not in _py_reserved else "_" + arg_name
+        args_values.setdefault(name, arg_def.default)
+
     return args_values

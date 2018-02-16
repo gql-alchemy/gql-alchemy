@@ -519,3 +519,21 @@ class ExecutorTest(unittest.TestCase):
             "{ ... @skip(if: true) { foo } bar }",
             Query()
         )
+
+    def test_default_argument(self):
+        class Query(Resolver):
+            def foo(self, a: int) -> int:
+                return a + 5
+
+        self.assertQueryResult(
+            '{"foo": 7}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.Field(s.Int, {"a": s.InputValue(s.Int, 2)}),
+                })
+            ),
+            "{ foo }",
+            Query()
+        )
