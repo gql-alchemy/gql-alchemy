@@ -1,6 +1,6 @@
 import unittest
 
-from ..schema import *
+from gql_alchemy.schema import *
 
 
 class Test(unittest.TestCase):

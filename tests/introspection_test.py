@@ -3,8 +3,8 @@ import unittest
 from itertools import chain
 
 import gql_alchemy.schema as s
-from ..executor import Executor, Resolver, SomeResolver
-from ..utils import PrimitiveType
+from gql_alchemy.executor import Executor, Resolver, SomeResolver
+from gql_alchemy.utils import PrimitiveType
 
 
 class ListQuery:
