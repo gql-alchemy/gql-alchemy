@@ -537,3 +537,23 @@ class ExecutorTest(unittest.TestCase):
             "{ foo }",
             Query()
         )
+
+    def test_null_by_default(self):
+        class Query(Resolver):
+            def foo(self, a: t.Optional[int]) -> int:
+                if a is None:
+                    return 1
+                return a + 5
+
+        self.assertQueryResult(
+            '{"foo": 1}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.Field(s.Int, {"a": s.Int}),
+                })
+            ),
+            "{ foo }",
+            Query()
+        )

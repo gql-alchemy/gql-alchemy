@@ -399,10 +399,12 @@ class PassThree(Validator):
                     str(e)
                 )) from e
 
-    @staticmethod
-    def __validate_args(args_provided: t.Sequence[qm.Argument], args_defs: t.Mapping[str, gt.Argument]) -> None:
+    def __validate_args(self, args_provided: t.Sequence[qm.Argument], args_defs: t.Mapping[str, gt.Argument]) -> None:
         args_defined_names = {a for a in args_defs.keys()}
-        args_required_names = {name for name, arg in args_defs.items() if arg.default is None}
+        args_required_names = {
+            name for name, arg in args_defs.items()
+            if arg.default is None and isinstance(arg.type(self.type_registry), gt.NonNull)
+        }
         args_provided_names = {arg.name for arg in args_provided}
 
         unsupported_args = list(args_provided_names.difference(args_defined_names))

@@ -166,8 +166,18 @@ class FieldsTest(ValidatorTest):
                 })
             ],
             s.Object("Query", {
-                "foo": s.Field("Foo", {"bar": s.Int})
+                "foo": s.Field("Foo", {"bar": s.NonNull(s.Int)})
             })
         )
         self.assertNoErrors("{ foo(bar: 10) {abc}}", schema)
         self.assertValidationError("{ foo {abc}}", schema, "Argument `bar` is required")
+
+    def test_do_not_require_nullable_args(self) -> None:
+        schema = s.Schema(
+            [
+            ],
+            s.Object("Query", {
+                "foo": s.Field(s.Int, {"bar": s.Int})
+            })
+        )
+        self.assertNoErrors("{ foo }", schema)
