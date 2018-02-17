@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="gql-alchemy",
-    version="0.0.0a2",
+    version="0.0.0a3",
     description="GraphQL implementation",
     long_description="Implementation for Facebook GraphQL based on http://facebook.github.io/graphql/October2016/ spec",
     url="https://github.com/gql-alchemy/gql-alchemy",
