@@ -1,3 +1,4 @@
+import json
 import typing as t
 
 import gql_alchemy.query_model as qm
@@ -240,7 +241,7 @@ class _OperationRunner:
                     parent_directives, field_type, field_raw_value, field_selection.selections
                 )
             else:
-                result[alias] = self.__select_plain_field(field_type, field_raw_value)
+                result[alias] = self.__select_plain_field(resolver, field_name, field_type, field_raw_value)
 
     def __process_spreadable_field(self, parent_directives: t.MutableSet[Directive], field_type: gt.GqlType,
                                    field_raw_value: t.Any,
@@ -302,9 +303,15 @@ class _OperationRunner:
         self.__select(parent_directives, result_dict, selections, field_type, field_raw_value)
         return result_dict
 
-    def __select_plain_field(self, field_type: gt.GqlType, field_raw_value: t.Any) -> PrimitiveType:
+    def __select_plain_field(self, resolver: Resolver, field_name: str, field_type: gt.GqlType,
+                             field_raw_value: t.Any) -> PrimitiveType:
         if not field_type.is_assignable(field_raw_value, self.type_registry):
-            raise GqlExecutionError("Resolver returns wrong type")
+            raise GqlExecutionError(
+                "Resolver `{}` for type `{}` returns not assignable value '{}' for field `{}` of type `{}`".format(
+                    type(resolver).__name__, resolver.for_gql_type, json.dumps(field_raw_value), field_name,
+                    str(field_type)
+                )
+            )
 
         return t.cast(PrimitiveType, field_raw_value)
 
