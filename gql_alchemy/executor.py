@@ -118,7 +118,7 @@ class Executor:
 
         if isinstance(operation, qm.Query):
             root_object = self.type_registry.resolve_type(self.query_object_name)
-            resolver = IntrospectionResolver(self.query_resolver, Introspection(self.schema))
+            resolver: Resolver = IntrospectionResolver(self.query_resolver, Introspection(self.schema))
         else:
             if self.mutation_object_name is None or self.mutation_resolver is None:
                 raise GqlExecutionError("Server does not support mutations")
