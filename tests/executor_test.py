@@ -557,3 +557,21 @@ class ExecutorTest(unittest.TestCase):
             "{ foo }",
             Query()
         )
+
+    def test_non_null_param_with_default(self):
+        class Query(Resolver):
+            def foo(self, a: int) -> int:
+                return a + 5
+
+        self.assertQueryResult(
+            '{"foo": 8}',
+            s.Schema(
+                [
+                ],
+                s.Object("Query", {
+                    "foo": s.Field(s.Int, {"a": s.NonNull(s.Int)}),
+                })
+            ),
+            "query ($a: Int! = 3){ foo(a: $a) }",
+            Query()
+        )

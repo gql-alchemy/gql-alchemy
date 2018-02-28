@@ -288,7 +288,10 @@ class PassTwo(Validator):
             vars_defaults[var.name] = var.default
 
         if self.__is_running(op):
-            env = Env(vars_definitions, self.__vars_values)
+            vars_values = dict(self.__vars_values)
+            for var, default in vars_defaults.items():
+                vars_values.setdefault(var, default.to_py_value({}))
+            env = Env(vars_definitions, vars_values)
         else:
             env = Env(vars_definitions, None)
 
