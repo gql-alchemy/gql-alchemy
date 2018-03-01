@@ -1,3 +1,4 @@
+from .documentation_examples_test import *
 from .executor_test import *
 from .introspection_test import *
 from .parser_test import *
